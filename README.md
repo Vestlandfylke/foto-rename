@@ -59,9 +59,9 @@ Enklast: dobbeltklikk `Start NB foto-namngivar.bat` (sjå "Kom i gang" over). Fr
 
 Begge opnar nettlesaren på `http://127.0.0.1:8000` automatisk. Appen køyrer lokalt og arbeider på server-side mapper du skriv inn (ein nettlesar kan ikkje sende ekte filstiar, og dei store TIFF-ane kan ikkje lastast opp). Tre steg i UI-et:
 
-1. **Les og rapporter**: vel inn-mappe, eining (GPU/CPU) og innstillingar, start OCR og følg framdrifta live.
-2. **Gjennomgå**: hent rapporten, sjå miniatyrbilete, rett Foto-ID/status der det trengst, og lagre.
-3. **Køyr omdøyping**: vel ut-mappe og kopier/omdøyp filene.
+1. **Les og rapporter**: vel inn-mappe, eining (GPU/CPU) og innstillingar, start OCR og følg framdrifta, med tid att undervegs.
+2. **Gjennomgå**: hent rapporten og rett Foto-ID/status der det trengst. Rapportar med mange bilete blir henta 200 rader om gongen, med Førre/Neste under tabellen. Skal du rette mange, vel **Treng handarbeid** i filteret og trykk **Start gjennomgang**: eitt bilete om gongen i stor visning, snudd same veg som OCR-en las det, med OCR-teksten ved sida og ID-feltet i fokus. <kbd>Enter</kbd> går vidare, <kbd>Shift</kbd>+<kbd>Enter</kbd> tilbake, <kbd>Ctrl</kbd>+<kbd>S</kbd> lagrar, <kbd>Esc</kbd> lukkar. Appen varslar om ein ID ikkje passar mønsteret, eller om same ID er brukt på fleire bilete.
+3. **Køyr omdøyping**: vel ut-mappe. Før noko blir skrive, viser appen kor mange som får nytt namn, kor mange som hamnar i `_manuell`, og eventuelle ID-kollisjonar, til stadfesting.
 
 ## Desktop-app (Electron)
 
@@ -87,6 +87,7 @@ Resultatet blir `desktop\dist\NB-foto-namngivar-Setup-<versjon>.exe`. Merk:
 
 - I ein installert app kan programmappa vere skriveverna, så rapportane hamnar i `Dokument\NB foto-namngivar\rapport`. Du kan overstyre dette med miljøvariabelen `NBR_REPORT_DIR`.
 - Backend-loggen finn du via menyen: **Hjelp → Opne loggmappa**.
+- Etter ei omdøyping kan du opne ut-mappa eller sjå rapporten i Utforskar. Under lange køyringar viser oppgåvelinja framdrift, og appen varslar når jobben er ferdig, men berre om vindauget ikkje står framme. Alt dette går via `src\preload.js`, så det finst berre i desktop-appen.
 - «Bla gjennom ...» brukar systemdialogen i Electron, via `src\preload.js`. Browser-appen har ikkje tilgang til han og går difor om `/api/pick` i backenden, som startar ein PowerShell-prosess per klikk. Difor finst begge vegane.
 - Ikonet er eit fotokort med lupe i Vestland-fargane. Grunnlaget er `desktop\build\icon.png` (1024x1024). Endrar du det, køyr `.venv\Scripts\python.exe desktop\scripts\make_icons.py --zoom 0.09` for å byggje `build\icon.ico` (installasjonsfil og .exe), `src\icon.png` (appvindauga) og `nbrenamer\web\favicon.ico` på nytt.
 
@@ -165,7 +166,7 @@ Opne `report.csv` (t.d. i Excel). Kolonnar:
 | `status` | `ok`, `manuell_ingen_id`, `manuell_uventa_tal` eller `feil` |
 | `error` | merknad ved manuell/feil |
 
-Du kan rette `new_basename`/`foto_id` manuelt og sette `status` til `ok` der du har fylt inn eit namn. `execute` les den redigerte fila.
+Du kan rette `new_basename`/`foto_id` manuelt og sette `status` til `ok` der du har fylt inn eit namn. `execute` les den redigerte fila. Steg 2 i appen gjer det same, men viser biletet ved sida av feltet og varslar om ID-ar som ikkje passar mønsteret eller er brukte fleire gonger.
 
 ### 3. `execute` (kopier/omdøyp)
 
