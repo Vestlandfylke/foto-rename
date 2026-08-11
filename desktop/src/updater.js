@@ -7,6 +7,8 @@ const path = require("node:path");
 
 const { autoUpdater } = require("electron-updater");
 
+const { APP_ICON } = require("./paths");
+
 let configured = false;
 let busy = false;
 
@@ -36,6 +38,7 @@ function createProgressWindow(parent) {
     show: true,
     title: "Lastar ned oppdatering",
     backgroundColor: "#0A3258",
+    icon: APP_ICON,
     resizable: false,
     maximizable: false,
     minimizable: false,

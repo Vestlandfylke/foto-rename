@@ -11,7 +11,7 @@ const path = require("node:path");
 
 const gpu = require("./gpu");
 const updater = require("./updater");
-const { PROJECT_ROOT, backendRoot, gpuSiteDir, resolvePython } = require("./paths");
+const { APP_ICON, PROJECT_ROOT, backendRoot, gpuSiteDir, resolvePython } = require("./paths");
 
 const IS_WINDOWS = process.platform === "win32";
 const STARTUP_TIMEOUT_MS = 120_000;
@@ -326,6 +326,7 @@ function createSplash() {
     center: true,
     show: true,
     backgroundColor: "#0A3258",
+    icon: APP_ICON,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
   splashWindow.loadFile(path.join(__dirname, "splash.html"));
@@ -343,6 +344,7 @@ function createMainWindow(url) {
     show: false,
     backgroundColor: "#eef2f7",
     title: "NB foto-namngivar",
+    icon: APP_ICON,
     webPreferences: { contextIsolation: true, nodeIntegration: false, spellcheck: false },
   });
 

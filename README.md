@@ -87,7 +87,7 @@ Resultatet blir `desktop\dist\NB-foto-namngivar-Setup-<versjon>.exe`. Merk:
 
 - I ein installert app kan programmappa vere skriveverna, så rapportane hamnar i `Dokument\NB foto-namngivar\rapport`. Du kan overstyre dette med miljøvariabelen `NBR_REPORT_DIR`.
 - Backend-loggen finn du via menyen: **Hjelp → Opne loggmappa**.
-- Installasjonsfila brukar enno standardikonet til Electron. Legg ein `icon.png` (minst 256x256) i `desktop\build\` for å få eit eige ikon.
+- Ikonet er eit fotokort med lupe i Vestland-fargane. Grunnlaget er `desktop\build\icon.png` (1024x1024). Endrar du det, køyr `.venv\Scripts\python.exe desktop\scripts\make_icons.py --zoom 0.09` for å byggje `build\icon.ico` (installasjonsfil og .exe), `src\icon.png` (appvindauga) og `nbrenamer\web\favicon.ico` på nytt.
 
 ### Oppdateringar
 

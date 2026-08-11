@@ -37,6 +37,9 @@ compression: maximum
 win:
   target: nsis
   artifactName: NB-foto-namngivar-Setup-${version}.exe
+  # Multi-storleik .ico laga av scripts/make_icons.py. Blir brukt av .exe-fila,
+  # installasjonsprogrammet, avinstalleringa og snarvegane.
+  icon: build/icon.ico
 
 nsis:
   oneClick: false

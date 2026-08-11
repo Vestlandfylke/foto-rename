@@ -7,7 +7,7 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { gpuSiteDir, resolvePython } = require("./paths");
+const { APP_ICON, gpuSiteDir, resolvePython } = require("./paths");
 
 const IS_WINDOWS = process.platform === "win32";
 // Same CUDA-serie som setup.ps1 og README brukar for browser-appen.
@@ -58,6 +58,7 @@ function createProgressWindow(parent) {
     show: true,
     title: "Installerer GPU-akselerasjon",
     backgroundColor: "#0A3258",
+    icon: APP_ICON,
     maximizable: false,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });

@@ -9,6 +9,11 @@ const path = require("node:path");
 // Prosjektrota i utviklingsmodus: desktop\src -> desktop -> foto-rename.
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
 
+// Ikonet for appvindauga. Det ligg i src/ fordi mappa blir pakka med appen, mens
+// build\icon.ico berre er byggjemateriale for installasjonsfila og sjølve .exe-fila.
+// Utan dette ville vindauga i utviklingsmodus vist standardikonet til Electron.
+const APP_ICON = path.join(__dirname, "icon.png");
+
 /** Mappa som inneheld `nbrenamer`-pakken. */
 function backendRoot() {
   return app.isPackaged ? path.join(process.resourcesPath, "backend") : PROJECT_ROOT;
@@ -42,4 +47,4 @@ function gpuSiteDir() {
   return path.join(base, "gpu-packages");
 }
 
-module.exports = { PROJECT_ROOT, backendRoot, resolvePython, gpuSiteDir };
+module.exports = { APP_ICON, PROJECT_ROOT, backendRoot, resolvePython, gpuSiteDir };
