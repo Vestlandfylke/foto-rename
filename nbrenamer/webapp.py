@@ -300,7 +300,20 @@ def api_report(
         rows = [r for r in rows if r["status"] == status]
     total = len(rows)
     page = rows[offset : offset + limit]
+    # Grunngjevinga blir lagd på her i staden for i CSV-en, slik at ordlyden kan rettast utan
+    # at gamle rapportar må skrivast om. Ved tekniske feil tek reason_for med systemfeilen.
+    for row in page:
+        row["grunngjeving"] = core.reason_for(row["status"], row.get("error", ""))
     return {"total": total, "counts": counts, "offset": offset, "limit": limit, "rows": page}
+
+
+@app.get("/api/statuses")
+def api_statuses():
+    """Kodane, dei korte namna og forklaringane, så UI-et ikkje duplisera ordlyden."""
+    return [
+        {"code": code, "label": label, "reason": core.REASONS.get(code, "")}
+        for code, label in core.STATUS_LABELS.items()
+    ]
 
 
 @app.post("/api/report/save")

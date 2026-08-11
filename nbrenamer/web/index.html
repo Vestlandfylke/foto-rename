@@ -187,12 +187,8 @@
     <div class="toolbar">
       <input type="text" id="r_report" value="report.csv" style="min-width:220px" title="Fila frå steg 1" />
       <button type="button" class="secondary browse" data-target="r_report" data-pick="open">Bla gjennom ...</button>
-      <select id="r_filter">
+      <select id="r_filter" title="Vis berre bilete med denne statusen">
         <option value="">Alle</option>
-        <option value="ok">ok</option>
-        <option value="manuell_ingen_id">manuell_ingen_id</option>
-        <option value="manuell_uventa_tal">manuell_uventa_tal</option>
-        <option value="feil">feil</option>
       </select>
       <button class="secondary" id="r_load">Hent</button>
       <span class="grow"></span>
@@ -455,7 +451,7 @@ function updateDiscover(j) {
   $('d_bar').style.width = pct + '%';
   $('d_cur').textContent = j.current ? ('Les: ' + j.current) : (j.message || '');
   $('d_pct').textContent = j.processed + ' / ' + j.total + ' · ' + j.elapsed + 's · ' + (j.device ? j.device.toUpperCase() : '');
-  $('d_counts').innerHTML = Object.entries(j.counts).map(([k,v]) => `<span class="pill">${k}: <b>${v}</b></span>`).join('');
+  $('d_counts').innerHTML = Object.entries(j.counts).map(([k,v]) => `<span class="pill">${statusLabel(k)}: <b>${v}</b></span>`).join('');
   if (j.state !== 'running') {
     $('d_start').disabled = false;
     $('d_msg').className = 'msg' + (j.state === 'error' ? ' error' : '');
@@ -470,6 +466,28 @@ $('d_goto2').onclick = () => { $('r_report').value = $('d_report').value; goToSt
 
 // Gå til steg 3 og ta med rapportstien frå steg 2.
 $('r_goto3').onclick = () => { $('e_report').value = $('r_report').value; goToStep('execute'); };
+
+// ---- Statusar ----
+// Kodane ('manuell_ingen_id' og resten) er det som står i CSV-en, men dei skal ikkje vere det
+// brukaren les. Namna og forklaringane kjem frå backenden, som eig ordlyden. Lista her er
+// berre ein reserve, så tabellen framleis er brukande om kallet feilar.
+let statusList = ['ok', 'manuell_ingen_id', 'manuell_uventa_tal', 'feil'].map(code => ({ code, label: code, reason: '' }));
+const statusLabel = (code) => statusList.find(s => s.code === code)?.label ?? code;
+
+function renderStatusChoices() {
+  const filter = $('r_filter');
+  const valt = filter.value;
+  filter.innerHTML = '<option value="">Alle</option>' +
+    statusList.map(s => `<option value="${s.code}">${s.label}</option>`).join('');
+  filter.value = valt;
+}
+function statusOptions(valt) {
+  return statusList
+    .map(s => `<option value="${s.code}"${s.code === valt ? ' selected' : ''}>${s.label}</option>`)
+    .join('');
+}
+api('/api/statuses').then(list => { if (list.length) { statusList = list; renderStatusChoices(); } }).catch(()=>{});
+renderStatusChoices();
 
 // ---- Review ----
 // Eit arkivuttrekk kan ha mange tusen bilete, og /api/report gir maks 5000 rader om gongen
@@ -523,7 +541,7 @@ async function loadReview(offset) {
 function renderPager(counts) {
   const first = reviewTotal ? reviewOffset + 1 : 0;
   const last = Math.min(reviewOffset + reviewRows.length, reviewTotal);
-  $('r_counts').textContent = Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join('  ·  ');
+  $('r_counts').textContent = Object.entries(counts).map(([k, v]) => `${statusLabel(k)}: ${v}`).join('  ·  ');
   $('r_range').textContent = `Viser ${first}-${last} av ${reviewTotal}`;
   $('r_pager').style.display = reviewTotal > reviewRows.length || reviewOffset > 0 ? 'flex' : 'none';
   $('r_prev').disabled = reviewOffset === 0;
@@ -547,16 +565,35 @@ function renderReview() {
   for (const r of reviewRows) {
     const tr = document.createElement('tr');
     const name = r.original_jpg.split(/[\\/]/).pop();
+    // Verdiar frå rapporten blir sette som DOM-eigenskapar i staden for å bli limte inn i
+    // markeringa: ein filsti kan innehalde apostrof, og då ville attributtet blitt broten.
     tr.innerHTML = `
-      <td><img loading="lazy" src="${thumb(r.original_jpg)}" onclick="showImg('${r.original_jpg.replace(/\\/g,'\\\\')}','${name}')" /></td>
-      <td>${name}</td>
-      <td>${r.raw_id || ''}</td>
-      <td><input type="text" value="${r.foto_id || ''}" data-k="foto_id" /></td>
-      <td><select data-k="status">
-        ${['ok','manuell_ingen_id','manuell_uventa_tal','feil'].map(s => `<option ${s===r.status?'selected':''}>${s}</option>`).join('')}
-      </select></td>
-      <td class="status-${r.status}">${r.error || ''}</td>`;
-    tr.querySelectorAll('[data-k]').forEach(el => el.onchange = () => { r[el.dataset.k] = el.value; if (el.dataset.k==='foto_id') r.new_basename = el.value; setReviewDirty(true); });
+      <td><img loading="lazy" alt="" /></td>
+      <td></td>
+      <td></td>
+      <td><input type="text" data-k="foto_id" /></td>
+      <td><select data-k="status">${statusOptions(r.status)}</select></td>
+      <td></td>`;
+    const [bilete, filnamn, raaId, nyttNamn, , grunngjeving] = tr.children;
+    const img = bilete.firstElementChild;
+    img.src = thumb(r.original_jpg);
+    img.alt = name;
+    img.onclick = () => showImg(r.original_jpg, name);
+    filnamn.textContent = name;
+    raaId.textContent = r.raw_id || '';
+    nyttNamn.firstElementChild.value = r.foto_id || '';
+    grunngjeving.className = 'status-' + r.status;
+    grunngjeving.textContent = r.grunngjeving || r.error || '';
+    tr.querySelectorAll('[data-k]').forEach(el => el.onchange = () => {
+      r[el.dataset.k] = el.value;
+      if (el.dataset.k === 'foto_id') r.new_basename = el.value;
+      if (el.dataset.k === 'status') {
+        // Grunngjevinga høyrer til statusen, så ho må følgje endringa med ein gong.
+        grunngjeving.className = 'status-' + r.status;
+        grunngjeving.textContent = statusList.find(s => s.code === r.status)?.reason ?? '';
+      }
+      setReviewDirty(true);
+    });
     tb.appendChild(tr);
   }
 }

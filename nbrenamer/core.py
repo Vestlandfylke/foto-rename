@@ -25,6 +25,7 @@ STATUS_REVIEW_UNEXPECTED = "manuell_uventa_tal"
 STATUS_ERROR = "feil"
 
 REASONS = {
+    STATUS_OK: "ID lesen i motivet, og nytt namn er klart.",
     STATUS_REVIEW_NO_ID: (
         "Fann ingen SFFf-ID i motivet. Teksten er truleg uleseleg eller for falma, "
         "eller står i ein orientering som ikkje gav treff."
@@ -34,6 +35,16 @@ REASONS = {
         "(kan vere eit avvikande nummer eller feillesing)."
     ),
     STATUS_ERROR: "Teknisk feil under prosessering av fila.",
+}
+
+# Korte namn til grensesnittet. Kodane over er det som står i CSV-en og som filtreringa
+# byggjer på; desse er berre til visning, så brukaren ikkje må velje mellom «manuell_ingen_id»
+# og «manuell_uventa_tal». Rekkjefølgja her er den UI-et viser dei i.
+STATUS_LABELS = {
+    STATUS_OK: "Klar",
+    STATUS_REVIEW_NO_ID: "Manglar ID",
+    STATUS_REVIEW_UNEXPECTED: "Uventa tal",
+    STATUS_ERROR: "Feil",
 }
 
 CSV_FIELDS = [
