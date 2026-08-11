@@ -88,6 +88,19 @@
   .toolbar .grow { flex: 1; }
   .pager { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
   .pager .msg { margin-top: 0; }
+  /* Dialogen styrer breidda; elles kolliderer .walk med max-width på dialog og innhaldet
+     blir klipt i staden for å krympe. */
+  #walkDlg { width: min(1180px, 90vw); }
+  .walk { display: flex; gap: 18px; padding: 16px; }
+  .walk-img { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; min-height: 66vh; }
+  .walk-img img { max-width: 100%; max-height: 66vh; border-radius: 6px; }
+  .walk-side { flex: 0 0 330px; display: flex; flex-direction: column; gap: 14px; }
+  .walk-side .field { margin-bottom: 0; }
+  .walk-ocr { font-family: Consolas, monospace; font-size: 12px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; max-height: 132px; overflow-y: auto; overflow-wrap: break-word; color: var(--text); }
+  .walk-nav { display: flex; align-items: center; gap: 10px; }
+  .walk-nav .last { margin-left: auto; }
+  .walk-keys { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .walk-keys kbd { background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-family: inherit; font-size: 11px; color: var(--brand); }
   .msg { margin-top: 12px; font-size: 13px; color: var(--muted); }
   .msg.error { color: var(--err); }
   dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); max-width: 90vw; max-height: 90vh; padding: 0; }
@@ -183,7 +196,7 @@
   <!-- STEG 2: REVIEW -->
   <section id="panel-review" class="panel">
     <h2>Sjå over og rett opp</h2>
-    <p class="hint">Her ser du kvart bilete med det føreslåtte namnet. Klikk på eit bilete for å sjå det stort. Rett <b>Foto-ID</b> (det nye namnet) eller <b>status</b> der det trengst, og trykk <b>Lagre endringar</b>. Framleis blir ingen filer endra. Bruk filteret for å sjå berre dei som treng handarbeid.</p>
+    <p class="hint">Her ser du kvart bilete med det føreslåtte namnet. Rett <b>Foto-ID</b> (det nye namnet) eller <b>status</b> der det trengst, og trykk <b>Lagre endringar</b>. Framleis blir ingen filer endra. Skal du rette mange, vel <b>Treng handarbeid</b> i filteret og trykk <b>Start gjennomgang</b>: då får du eitt bilete om gongen, i stor visning og snudd rett veg, og kan skrive deg gjennom med tastaturet. Du kan òg klikke på eit bilete for å starte gjennomgangen der.</p>
     <div class="toolbar">
       <input type="text" id="r_report" value="report.csv" style="min-width:220px" title="Fila frå steg 1" />
       <button type="button" class="secondary browse" data-target="r_report" data-pick="open">Bla gjennom ...</button>
@@ -191,6 +204,7 @@
         <option value="">Alle</option>
       </select>
       <button class="secondary" id="r_load">Hent</button>
+      <button id="r_walk" disabled title="Gå gjennom bileta eitt om gongen">Start gjennomgang</button>
       <span class="grow"></span>
       <span id="r_counts" class="msg"></span>
       <button id="r_save" disabled>Lagre endringar</button>
@@ -244,9 +258,35 @@
   </section>
 </main>
 
-<dialog id="imgDlg">
-  <div class="dlg-head"><span id="dlgName"></span><button class="secondary" onclick="document.getElementById('imgDlg').close()">Lukk</button></div>
-  <img id="dlgImg" src="" alt="" />
+<dialog id="walkDlg">
+  <div class="dlg-head"><span id="walkPos"></span><button class="secondary" id="walkClose">Lukk</button></div>
+  <div class="walk">
+    <div class="walk-img"><img id="walkImg" src="" alt="" /></div>
+    <div class="walk-side">
+      <div class="field">
+        <label for="walkId">Foto-ID (nytt namn)</label>
+        <input type="text" id="walkId" spellcheck="false" />
+        <span class="help" id="walkName"></span>
+      </div>
+      <div class="field">
+        <label for="walkStatus">Status</label>
+        <select id="walkStatus"></select>
+        <span class="help" id="walkReason"></span>
+      </div>
+      <div class="field">
+        <label>Dette leste OCR-en</label>
+        <div class="walk-ocr" id="walkOcr"></div>
+      </div>
+      <div class="walk-nav">
+        <button class="secondary" id="walkPrev">Førre</button>
+        <button id="walkNext">Neste</button>
+        <button class="secondary last" id="walkSave">Lagre</button>
+      </div>
+      <span class="walk-keys">
+        <kbd>Enter</kbd> neste · <kbd>Shift</kbd>+<kbd>Enter</kbd> førre · <kbd>Ctrl</kbd>+<kbd>S</kbd> lagre · <kbd>Esc</kbd> lukk
+      </span>
+    </div>
+  </div>
 </dialog>
 
 <dialog id="dirDlg">
@@ -309,8 +349,10 @@ api('/api/status').then(s => {
 // Miniatyren i tabellen er 90x64 px på skjermen, så det er ingen grunn til å be backenden
 // skalere heile biletet til 1000 px for kvar rad. Standarden her er nok for skjermar med
 // dobbel pikseltettleik, og gjer at ei side med mange rader blir klar med ein gong.
-const thumb = (path, maxDim = 220) => '/api/thumb?path=' + encodeURIComponent(path) + '&max_dim=' + maxDim;
-function showImg(path, name) { $('dlgImg').src = thumb(path, 1600); $('dlgName').textContent = name; $('imgDlg').showModal(); }
+// `rotate` er vinkelen som gjorde ID-en leseleg for OCR-en, og backenden snur biletet same
+// vegen, slik at ei loddrett tekststripe står rett veg i gjennomgangen.
+const thumb = (path, maxDim = 220, rotate = 0) =>
+  '/api/thumb?path=' + encodeURIComponent(path) + '&max_dim=' + maxDim + (rotate ? '&rotate=' + rotate : '');
 
 // ---- Mappeveljar ----
 const FOLDER_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0A3258" stroke-width="2" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
@@ -474,10 +516,15 @@ $('r_goto3').onclick = () => { $('e_report').value = $('r_report').value; goToSt
 let statusList = ['ok', 'manuell_ingen_id', 'manuell_uventa_tal', 'feil'].map(code => ({ code, label: code, reason: '' }));
 const statusLabel = (code) => statusList.find(s => s.code === code)?.label ?? code;
 
+// Alt som ikkje er 'ok' krev at eit menneske ser på det. /api/report tek imot fleire kodar
+// kommaseparert, så dette blir eitt filterval i staden for tre.
+const manualCodes = () => statusList.filter(s => s.code !== 'ok').map(s => s.code).join(',');
+
 function renderStatusChoices() {
   const filter = $('r_filter');
   const valt = filter.value;
   filter.innerHTML = '<option value="">Alle</option>' +
+    `<option value="${manualCodes()}">Treng handarbeid</option>` +
     statusList.map(s => `<option value="${s.code}">${s.label}</option>`).join('');
   filter.value = valt;
 }
@@ -532,6 +579,7 @@ async function loadReview(offset) {
     setReviewDirty(false);
     renderReview();
     renderPager(data.counts);
+    $('r_walk').disabled = !reviewRows.length;
   } catch (e) {
     $('r_msg').className = 'msg error';
     $('r_msg').textContent = e.message;
@@ -563,6 +611,7 @@ function renderReview() {
   const tb = $('r_table').querySelector('tbody');
   tb.innerHTML = '';
   for (const r of reviewRows) {
+    const index = tb.children.length;
     const tr = document.createElement('tr');
     const name = r.original_jpg.split(/[\\/]/).pop();
     // Verdiar frå rapporten blir sette som DOM-eigenskapar i staden for å bli limte inn i
@@ -578,7 +627,7 @@ function renderReview() {
     const img = bilete.firstElementChild;
     img.src = thumb(r.original_jpg);
     img.alt = name;
-    img.onclick = () => showImg(r.original_jpg, name);
+    img.onclick = () => openWalk(index);
     filnamn.textContent = name;
     raaId.textContent = r.raw_id || '';
     nyttNamn.firstElementChild.value = r.foto_id || '';
@@ -597,6 +646,87 @@ function renderReview() {
     tb.appendChild(tr);
   }
 }
+
+// ---- Gjennomgang ----
+// Tabellen er god til oversikt, men treg å rette i: for kvart bilete måtte brukaren opne
+// miniatyren, tyde ID-en, lukke dialogen og finne fram til feltet igjen. Her er det eitt
+// bilete om gongen, i stor visning og snudd rett veg, med ID-feltet i fokus, så rettinga
+// blir skrive-Enter-skrive-Enter utan å ta hendene frå tastaturet.
+let walkIndex = 0;
+
+function openWalk(start) {
+  if (!reviewRows.length) return;
+  walkIndex = Math.min(Math.max(0, start), reviewRows.length - 1);
+  $('walkStatus').innerHTML = statusOptions('');
+  // showModal() flyttar fokus til det fyrste elementet i dialogen, så det må skje før
+  // showWalk(), som set fokus i ID-feltet. Elles står brukaren på Lukk-knappen.
+  if (!$('walkDlg').open) $('walkDlg').showModal();
+  showWalk();
+}
+
+function showWalk() {
+  const r = reviewRows[walkIndex];
+  const name = r.original_jpg.split(/[\\/]/).pop();
+  const rot = parseInt(r.rotation, 10) || 0;
+  $('walkPos').textContent =
+    `Bilete ${reviewOffset + walkIndex + 1} av ${reviewTotal}` + (rot ? `  ·  vist snudd ${rot}°` : '');
+  $('walkImg').src = thumb(r.original_jpg, 1400, rot);
+  $('walkImg').alt = name;
+  $('walkName').textContent = name;
+  $('walkOcr').textContent = r.ocr_text || '(OCR-en fann ingen tekst i dette biletet)';
+  $('walkId').value = r.foto_id || '';
+  $('walkStatus').value = r.status;
+  showWalkReason();
+  $('walkPrev').disabled = walkIndex === 0;
+  $('walkNext').disabled = walkIndex >= reviewRows.length - 1;
+  $('walkId').focus();
+  $('walkId').select();
+}
+
+function showWalkReason() {
+  $('walkReason').textContent = statusList.find(s => s.code === $('walkStatus').value)?.reason ?? '';
+}
+
+// Skriv tilbake til rada med ein gong, så ingenting går tapt når brukaren blar vidare.
+function captureWalk() {
+  const r = reviewRows[walkIndex];
+  if (!r) return;
+  const id = $('walkId').value.trim();
+  const status = $('walkStatus').value;
+  if (id === (r.foto_id || '') && status === r.status) return;
+  r.foto_id = id;
+  r.new_basename = id;
+  r.status = status;
+  setReviewDirty(true);
+}
+
+function stepWalk(delta) {
+  captureWalk();
+  const neste = walkIndex + delta;
+  if (neste < 0 || neste >= reviewRows.length) return;
+  walkIndex = neste;
+  showWalk();
+}
+
+$('r_walk').onclick = () => openWalk(0);
+$('walkPrev').onclick = () => stepWalk(-1);
+$('walkNext').onclick = () => stepWalk(1);
+$('walkSave').onclick = () => { captureWalk(); saveReview(); };
+$('walkClose').onclick = () => $('walkDlg').close();
+$('walkStatus').onchange = () => { captureWalk(); showWalkReason(); };
+// Tabellen viser rettingane frå gjennomgangen når vindauget blir lukka, òg med Esc.
+$('walkDlg').addEventListener('close', () => { captureWalk(); renderReview(); });
+// Piltastane er ikkje i bruk her: ID-feltet har fokus, og då skal dei flytte skrivemerket.
+$('walkDlg').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    stepWalk(e.shiftKey ? -1 : 1);
+  } else if (e.key.toLowerCase() === 's' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    captureWalk();
+    saveReview();
+  }
+});
 
 // Lagrar rettingane på sida som er open. Gir true når det gjekk bra, slik at eit sideskifte
 // kan avbrytast dersom lagringa feilar.

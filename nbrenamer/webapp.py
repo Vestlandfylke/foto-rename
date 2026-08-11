@@ -297,7 +297,10 @@ def api_report(
     for r in rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
     if status:
-        rows = [r for r in rows if r["status"] == status]
+        # Fleire statusar kan sendast kommaseparert, slik at UI-et kan tilby «treng handarbeid»
+        # som eitt val i staden for at brukaren må gå gjennom kvar statuskode for seg.
+        wanted = {s.strip() for s in status.split(",") if s.strip()}
+        rows = [r for r in rows if r["status"] in wanted]
     total = len(rows)
     page = rows[offset : offset + limit]
     # Grunngjevinga blir lagd på her i staden for i CSV-en, slik at ordlyden kan rettast utan
@@ -577,12 +580,19 @@ def api_browse(path: Optional[str] = None):
 
 
 @app.get("/api/thumb")
-def api_thumb(path: str, max_dim: int = 1000):
+def api_thumb(path: str, max_dim: int = 1000, rotate: int = 0):
+    """
+    Biletet skalert til visning. `rotate` er same vinkel som `rotation` i rapporten, altså den
+    som gjorde ID-en leseleg for OCR-en. Gjennomgangen sender han med, slik at ei loddrett
+    tekststripe står rett veg på skjermen i staden for at brukaren må tyde biletet på sida.
+    """
     p = Path(path)
     if not p.is_file():
         raise HTTPException(status_code=404, detail="Fila finst ikkje")
     try:
         img = core.load_base_image(p, max_dim, autocontrast=False)
+        if rotate % 360:
+            img = img.rotate(rotate, expand=True)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=85)
         buf.seek(0)
