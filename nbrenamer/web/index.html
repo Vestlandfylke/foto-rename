@@ -83,6 +83,10 @@
   th { color: var(--muted); font-weight: 600; }
   td img { width: 90px; height: 64px; object-fit: cover; border-radius: 6px; background: var(--bg); cursor: zoom-in; }
   td input { width: 100%; }
+  /* Ein Foto-ID er 17 teikn. Utan denne breidda blir han klipt midt i talet, og då kan
+     brukaren korkje lese det OCR-en fann eller kontrollere det han sjølv skriv. */
+  #r_table th:nth-child(3), #r_table td:nth-child(3),
+  #r_table th:nth-child(4), #r_table td:nth-child(4) { min-width: 172px; }
   .status-ok { color: var(--ok); } .status-manuell_ingen_id, .status-manuell_uventa_tal { color: var(--warn); } .status-feil { color: var(--err); }
   .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
   .toolbar .grow { flex: 1; }
@@ -103,6 +107,10 @@
   .walk-keys kbd { background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-family: inherit; font-size: 11px; color: var(--brand); }
   .msg { margin-top: 12px; font-size: 13px; color: var(--muted); }
   .msg.error { color: var(--err); }
+  .msg.warn { color: var(--warn); }
+  input.bad { border-color: var(--err); box-shadow: 0 0 0 3px rgba(220, 38, 38, .12); }
+  .walk-warn:empty { display: none; }
+  .walk-warn { color: var(--err); }
   dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); max-width: 90vw; max-height: 90vh; padding: 0; }
   dialog img { max-width: 86vw; max-height: 80vh; display: block; }
   dialog .dlg-head { display: flex; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); }
@@ -206,6 +214,7 @@
       <button class="secondary" id="r_load">Hent</button>
       <button id="r_walk" disabled title="Gå gjennom bileta eitt om gongen">Start gjennomgang</button>
       <span class="grow"></span>
+      <span id="r_warn" class="msg warn"></span>
       <span id="r_counts" class="msg"></span>
       <button id="r_save" disabled>Lagre endringar</button>
     </div>
@@ -266,6 +275,7 @@
       <div class="field">
         <label for="walkId">Foto-ID (nytt namn)</label>
         <input type="text" id="walkId" spellcheck="false" />
+        <span class="help walk-warn" id="walkWarn"></span>
         <span class="help" id="walkName"></span>
       </div>
       <div class="field">
@@ -339,6 +349,7 @@ api('/api/status').then(s => {
   const b = $('gpuBadge');
   if (s.gpu_available) { b.className = 'badge gpu'; b.textContent = 'GPU: ' + (s.gpu_name || 'CUDA'); }
   else { b.className = 'badge cpu'; b.textContent = 'CPU (ingen CUDA-GPU funnen)'; $('d_device').value = 'cpu'; }
+  if (s.foto_id_pattern) { fotoIdRe = new RegExp(s.foto_id_pattern); fotoIdExample = s.foto_id_example || ''; }
   // Legg rapporten i standardmappa når brukaren ikkje alt har vald ei eiga mappe.
   if (s.report_dir) {
     const cur = $('d_report').value.trim();
@@ -536,6 +547,59 @@ function statusOptions(valt) {
 api('/api/statuses').then(list => { if (list.length) { statusList = list; renderStatusChoices(); } }).catch(()=>{});
 renderStatusChoices();
 
+// ---- Kontroll av Foto-ID ----
+// Mønsteret kjem frå backenden, som eig namnereglane. Dette er eit varsel, ikkje ei sperre:
+// den som rettar manuelt kan ha grunnar maskina ikkje kjenner, og skal kunne lagre likevel.
+let fotoIdRe = null;
+let fotoIdExample = '';
+// Duplikat i resten av rapporten, rekna av backenden over heile fila. Blir oppdatert ved
+// henting og lagring, så varselet speglar det som faktisk ligg på disk.
+let duplicateIds = new Set();
+let reviewFileTotal = 0;
+
+const ID_PROBLEM_TEXT = {
+  format: () => `Passar ikkje mønsteret for Foto-ID. Døme: ${fotoIdExample}`,
+  duplikat: () => 'Same Foto-ID er brukt på eit anna bilete. Dei ville kollidert i steg 3.',
+};
+const idProblemText = (kode) => (kode ? ID_PROBLEM_TEXT[kode]() : '');
+
+// `eigar` er indeksen til rada verdien høyrer til, slik at ho ikkje tel seg sjølv som duplikat.
+function idProblem(value, eigar) {
+  const v = (value || '').trim();
+  // Tomt er lov: biletet hamnar i _manuell og beheld originalnamnet.
+  if (!v) return '';
+  if (fotoIdRe && !fotoIdRe.test(v)) return 'format';
+  const påSida = reviewRows.filter((r, i) => i !== eigar && (r.foto_id || '').trim() === v).length;
+  if (påSida) return 'duplikat';
+  // Ser me heile rapporten, veit me alt me treng sjølve. Elles må me stole på lista frå
+  // backenden, som er frå førre lagring: eit duplikat brukaren nettopp har løyst på ei anna
+  // side kan difor gi varsel til neste lagring.
+  const serEiHeileRapporten = reviewRows.length < reviewFileTotal;
+  return serEiHeileRapporten && duplicateIds.has(v) ? 'duplikat' : '';
+}
+
+function markId(input, eigar) {
+  const kode = idProblem(input.value, eigar);
+  input.classList.toggle('bad', !!kode);
+  input.title = idProblemText(kode);
+}
+
+function renderIdWarnings() {
+  let format = 0;
+  let duplikat = 0;
+  reviewRows.forEach((r, i) => {
+    const kode = idProblem(r.foto_id, i);
+    if (kode === 'format') format++;
+    else if (kode === 'duplikat') duplikat++;
+  });
+  const deler = [];
+  if (format) deler.push(`${format} ID${format > 1 ? '-ar' : ''} passar ikkje mønsteret`);
+  if (duplikat) deler.push(`${duplikat} har same ID som eit anna bilete`);
+  $('r_warn').textContent = deler.join('  ·  ');
+  // Eit duplikat gjeld to rader, så når den eine blir retta må merket falle bort på den andre.
+  $('r_table').querySelectorAll('input[data-k=foto_id]').forEach((el, i) => markId(el, i));
+}
+
 // ---- Review ----
 // Eit arkivuttrekk kan ha mange tusen bilete, og /api/report gir maks 5000 rader om gongen
 // med 500 som standard. Difor hentar me side for side: utan dette ville radene etter den
@@ -576,9 +640,12 @@ async function loadReview(offset) {
     reviewRows = data.rows;
     reviewOffset = data.offset;
     reviewTotal = data.total;
+    reviewFileTotal = Object.values(data.counts).reduce((a, b) => a + b, 0);
+    duplicateIds = new Set(data.duplicates || []);
     setReviewDirty(false);
     renderReview();
     renderPager(data.counts);
+    renderIdWarnings();
     $('r_walk').disabled = !reviewRows.length;
   } catch (e) {
     $('r_msg').className = 'msg error';
@@ -630,7 +697,10 @@ function renderReview() {
     img.onclick = () => openWalk(index);
     filnamn.textContent = name;
     raaId.textContent = r.raw_id || '';
-    nyttNamn.firstElementChild.value = r.foto_id || '';
+    const idFelt = nyttNamn.firstElementChild;
+    idFelt.value = r.foto_id || '';
+    markId(idFelt, index);
+    idFelt.oninput = () => markId(idFelt, index);
     grunngjeving.className = 'status-' + r.status;
     grunngjeving.textContent = r.grunngjeving || r.error || '';
     tr.querySelectorAll('[data-k]').forEach(el => el.onchange = () => {
@@ -641,6 +711,7 @@ function renderReview() {
         grunngjeving.className = 'status-' + r.status;
         grunngjeving.textContent = statusList.find(s => s.code === r.status)?.reason ?? '';
       }
+      renderIdWarnings();
       setReviewDirty(true);
     });
     tb.appendChild(tr);
@@ -677,6 +748,7 @@ function showWalk() {
   $('walkId').value = r.foto_id || '';
   $('walkStatus').value = r.status;
   showWalkReason();
+  updateWalkWarn();
   $('walkPrev').disabled = walkIndex === 0;
   $('walkNext').disabled = walkIndex >= reviewRows.length - 1;
   $('walkId').focus();
@@ -686,6 +758,13 @@ function showWalk() {
 function showWalkReason() {
   $('walkReason').textContent = statusList.find(s => s.code === $('walkStatus').value)?.reason ?? '';
 }
+
+function updateWalkWarn() {
+  const kode = idProblem($('walkId').value, walkIndex);
+  $('walkWarn').textContent = idProblemText(kode);
+  $('walkId').classList.toggle('bad', !!kode);
+}
+$('walkId').oninput = updateWalkWarn;
 
 // Skriv tilbake til rada med ein gong, så ingenting går tapt når brukaren blar vidare.
 function captureWalk() {
@@ -697,6 +776,7 @@ function captureWalk() {
   r.foto_id = id;
   r.new_basename = id;
   r.status = status;
+  renderIdWarnings();
   setReviewDirty(true);
 }
 
@@ -735,6 +815,8 @@ async function saveReview() {
     const payload = { report: $('r_report').value.trim(), rows: reviewRows.map(r => ({ original_jpg: r.original_jpg, foto_id: r.foto_id, new_basename: r.foto_id, status: r.status })) };
     const res = await api('/api/report/save', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
     $('r_msg').className = 'msg'; $('r_msg').textContent = `Lagra ${res.updated} rader.`;
+    duplicateIds = new Set(res.duplicates || []);
+    renderIdWarnings();
     setReviewDirty(false);
     return true;
   } catch (e) { $('r_msg').className = 'msg error'; $('r_msg').textContent = e.message; return false; }

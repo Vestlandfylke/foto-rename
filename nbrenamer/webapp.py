@@ -252,7 +252,13 @@ def api_status():
             name = torch.cuda.get_device_name(0)
         except Exception:
             pass
-    return {"gpu_available": gpu, "gpu_name": name, "report_dir": str(DEFAULT_REPORT_DIR)}
+    return {
+        "gpu_available": gpu,
+        "gpu_name": name,
+        "report_dir": str(DEFAULT_REPORT_DIR),
+        "foto_id_pattern": core.FOTO_ID_PATTERN,
+        "foto_id_example": core.FOTO_ID_EXAMPLE,
+    }
 
 
 @app.post("/api/discover/start")
@@ -282,6 +288,20 @@ def api_job():
     return _job_snapshot()
 
 
+def _duplicate_ids(rows: list[dict]) -> list[str]:
+    """
+    Foto-ID-ar som er brukte på meir enn éi rad. Slike kolliderer i steg 3, der den eine fila
+    anten overskriv den andre eller blir talt som konflikt. Betre å seie frå under gjennomgangen,
+    før noko er skrive til disk.
+    """
+    seen: dict[str, int] = {}
+    for r in rows:
+        fid = (r.get("foto_id") or "").strip()
+        if fid:
+            seen[fid] = seen.get(fid, 0) + 1
+    return sorted(fid for fid, n in seen.items() if n > 1)
+
+
 @app.get("/api/report")
 def api_report(
     path: str,
@@ -296,6 +316,9 @@ def api_report(
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
+    # Duplikat blir rekna over heile rapporten, ikkje berre sida som blir vist, sidan den andre
+    # raden med same ID like gjerne kan liggje på ei anna side.
+    duplicates = _duplicate_ids(rows)
     if status:
         # Fleire statusar kan sendast kommaseparert, slik at UI-et kan tilby «treng handarbeid»
         # som eitt val i staden for at brukaren må gå gjennom kvar statuskode for seg.
@@ -307,7 +330,14 @@ def api_report(
     # at gamle rapportar må skrivast om. Ved tekniske feil tek reason_for med systemfeilen.
     for row in page:
         row["grunngjeving"] = core.reason_for(row["status"], row.get("error", ""))
-    return {"total": total, "counts": counts, "offset": offset, "limit": limit, "rows": page}
+    return {
+        "total": total,
+        "counts": counts,
+        "duplicates": duplicates,
+        "offset": offset,
+        "limit": limit,
+        "rows": page,
+    }
 
 
 @app.get("/api/statuses")
@@ -342,7 +372,9 @@ def api_report_save(req: SaveReq):
         writer = csv.DictWriter(f, fieldnames=core.CSV_FIELDS)
         writer.writeheader()
         writer.writerows(rows)
-    return {"ok": True, "updated": len(edits)}
+    # Duplikatlista blir rekna på nytt her, slik at varselet i UI-et speglar fila som no ligg
+    # på disk i staden for tilstanden før lagringa.
+    return {"ok": True, "updated": len(edits), "duplicates": _duplicate_ids(rows)}
 
 
 def _list_drives() -> list[dict]:

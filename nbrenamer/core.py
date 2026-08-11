@@ -47,6 +47,12 @@ STATUS_LABELS = {
     STATUS_ERROR: "Feil",
 }
 
+# Mønsteret eit ferdig Foto-ID skal ha: prefiks, seks til åtte siffer, punktum og to til fire
+# siffer. Med vilje mildare enn 8/9-regelen i classify(), sidan eit menneske som rettar
+# manuelt kan ha grunnar maskina ikkje kjenner. Grensesnittet varslar, det sperrar ikkje.
+FOTO_ID_PATTERN = rf"^{DEFAULT_PREFIX}-\d{{6,8}}\.\d{{2,4}}$"
+FOTO_ID_EXAMPLE = f"{DEFAULT_PREFIX}-1994207.0007"
+
 CSV_FIELDS = [
     "original_jpg",
     "ocr_text",
