@@ -86,6 +86,8 @@
   .status-ok { color: var(--ok); } .status-manuell_ingen_id, .status-manuell_uventa_tal { color: var(--warn); } .status-feil { color: var(--err); }
   .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
   .toolbar .grow { flex: 1; }
+  .pager { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  .pager .msg { margin-top: 0; }
   .msg { margin-top: 12px; font-size: 13px; color: var(--muted); }
   .msg.error { color: var(--err); }
   dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); max-width: 90vw; max-height: 90vh; padding: 0; }
@@ -200,6 +202,11 @@
     <table id="r_table"><thead><tr>
       <th>Bilete</th><th>Originalnamn</th><th>Rå ID</th><th>Foto-ID (nytt namn)</th><th>Status</th><th>Grunngjeving</th>
     </tr></thead><tbody></tbody></table>
+    <div class="pager" id="r_pager" style="display:none">
+      <button class="secondary" id="r_prev">Førre side</button>
+      <span class="msg" id="r_range"></span>
+      <button class="secondary" id="r_next">Neste side</button>
+    </div>
     <div class="msg" id="r_msg"></div>
     <button id="r_goto3" style="margin-top:12px">Gå vidare til steg 3: Køyr omdøyping</button>
   </section>
@@ -303,8 +310,11 @@ api('/api/status').then(s => {
   }
 }).catch(()=>{});
 
-const thumb = (path) => '/api/thumb?path=' + encodeURIComponent(path);
-function showImg(path, name) { $('dlgImg').src = thumb(path) + '&max_dim=1600'; $('dlgName').textContent = name; $('imgDlg').showModal(); }
+// Miniatyren i tabellen er 90x64 px på skjermen, så det er ingen grunn til å be backenden
+// skalere heile biletet til 1000 px for kvar rad. Standarden her er nok for skjermar med
+// dobbel pikseltettleik, og gjer at ei side med mange rader blir klar med ein gong.
+const thumb = (path, maxDim = 220) => '/api/thumb?path=' + encodeURIComponent(path) + '&max_dim=' + maxDim;
+function showImg(path, name) { $('dlgImg').src = thumb(path, 1600); $('dlgName').textContent = name; $('imgDlg').showModal(); }
 
 // ---- Mappeveljar ----
 const FOLDER_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0A3258" stroke-width="2" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
@@ -462,17 +472,73 @@ $('d_goto2').onclick = () => { $('r_report').value = $('d_report').value; goToSt
 $('r_goto3').onclick = () => { $('e_report').value = $('r_report').value; goToStep('execute'); };
 
 // ---- Review ----
+// Eit arkivuttrekk kan ha mange tusen bilete, og /api/report gir maks 5000 rader om gongen
+// med 500 som standard. Difor hentar me side for side: utan dette ville radene etter den
+// fyrste sida vore utilgjengelege for gjennomgang.
+const PAGE_SIZE = 200;
 let reviewRows = [];
-$('r_load').onclick = async () => {
+let reviewOffset = 0;
+let reviewTotal = 0;
+let reviewDirty = false;
+
+function setReviewDirty(dirty) {
+  reviewDirty = dirty;
+  $('r_save').disabled = !dirty;
+}
+
+// Rettingar ligg berre i minnet til dei blir lagra, så eit sideskifte ville elles kaste dei
+// stille. Då er det betre å spørje.
+async function keepEdits() {
+  if (!reviewDirty) return true;
+  const save = confirm(
+    'Du har rettingar som ikkje er lagra.\n\n' +
+      'OK: lagre dei og hald fram.\nAvbryt: bli ståande på denne sida.'
+  );
+  return save ? await saveReview() : false;
+}
+
+async function loadReview(offset) {
+  $('r_msg').className = 'msg';
   $('r_msg').textContent = '';
+  const params = new URLSearchParams({
+    path: $('r_report').value.trim(),
+    limit: String(PAGE_SIZE),
+    offset: String(Math.max(0, offset)),
+  });
+  if ($('r_filter').value) params.set('status', $('r_filter').value);
   try {
-    const url = '/api/report?path=' + encodeURIComponent($('r_report').value.trim()) + (($('r_filter').value) ? '&status=' + $('r_filter').value : '');
-    const data = await api(url);
+    const data = await api('/api/report?' + params);
     reviewRows = data.rows;
-    $('r_counts').textContent = Object.entries(data.counts).map(([k,v]) => `${k}: ${v}`).join('  ·  ') + `  (viser ${data.rows.length}/${data.total})`;
+    reviewOffset = data.offset;
+    reviewTotal = data.total;
+    setReviewDirty(false);
     renderReview();
-    $('r_save').disabled = false;
-  } catch (e) { $('r_msg').className = 'msg error'; $('r_msg').textContent = e.message; }
+    renderPager(data.counts);
+  } catch (e) {
+    $('r_msg').className = 'msg error';
+    $('r_msg').textContent = e.message;
+  }
+}
+
+function renderPager(counts) {
+  const first = reviewTotal ? reviewOffset + 1 : 0;
+  const last = Math.min(reviewOffset + reviewRows.length, reviewTotal);
+  $('r_counts').textContent = Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join('  ·  ');
+  $('r_range').textContent = `Viser ${first}-${last} av ${reviewTotal}`;
+  $('r_pager').style.display = reviewTotal > reviewRows.length || reviewOffset > 0 ? 'flex' : 'none';
+  $('r_prev').disabled = reviewOffset === 0;
+  $('r_next').disabled = last >= reviewTotal;
+}
+
+$('r_load').onclick = async () => {
+  if (await keepEdits()) loadReview(0);
+};
+$('r_filter').onchange = () => $('r_load').click();
+$('r_prev').onclick = async () => {
+  if (await keepEdits()) loadReview(reviewOffset - PAGE_SIZE);
+};
+$('r_next').onclick = async () => {
+  if (await keepEdits()) loadReview(reviewOffset + PAGE_SIZE);
 };
 
 function renderReview() {
@@ -490,18 +556,23 @@ function renderReview() {
         ${['ok','manuell_ingen_id','manuell_uventa_tal','feil'].map(s => `<option ${s===r.status?'selected':''}>${s}</option>`).join('')}
       </select></td>
       <td class="status-${r.status}">${r.error || ''}</td>`;
-    tr.querySelectorAll('[data-k]').forEach(el => el.onchange = () => { r[el.dataset.k] = el.value; if (el.dataset.k==='foto_id') r.new_basename = el.value; });
+    tr.querySelectorAll('[data-k]').forEach(el => el.onchange = () => { r[el.dataset.k] = el.value; if (el.dataset.k==='foto_id') r.new_basename = el.value; setReviewDirty(true); });
     tb.appendChild(tr);
   }
 }
 
-$('r_save').onclick = async () => {
+// Lagrar rettingane på sida som er open. Gir true når det gjekk bra, slik at eit sideskifte
+// kan avbrytast dersom lagringa feilar.
+async function saveReview() {
   try {
     const payload = { report: $('r_report').value.trim(), rows: reviewRows.map(r => ({ original_jpg: r.original_jpg, foto_id: r.foto_id, new_basename: r.foto_id, status: r.status })) };
     const res = await api('/api/report/save', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
     $('r_msg').className = 'msg'; $('r_msg').textContent = `Lagra ${res.updated} rader.`;
-  } catch (e) { $('r_msg').className = 'msg error'; $('r_msg').textContent = e.message; }
-};
+    setReviewDirty(false);
+    return true;
+  } catch (e) { $('r_msg').className = 'msg error'; $('r_msg').textContent = e.message; return false; }
+}
+$('r_save').onclick = saveReview;
 
 // ---- Execute ----
 $('e_start').onclick = async () => {
