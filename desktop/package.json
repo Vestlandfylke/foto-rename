@@ -1,0 +1,23 @@
+{
+  "name": "nb-foto-namngivar",
+  "productName": "NB foto-namngivar",
+  "version": "1.0.0",
+  "description": "Lokal desktop-app som gir re-digitaliserte NB-fotofiler nye ID-baserte filnamn med lokal OCR.",
+  "author": "Vestland fylkeskommune",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis --publish never",
+    "publish": "electron-builder --win nsis --publish always"
+  },
+  "devDependencies": {
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

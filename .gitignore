@@ -1,0 +1,27 @@
+# ABOUTME: Fortel git kva som ikkje skal inn i repoet: byggjeartefakt, Python-miljø og arkivdata.
+# ABOUTME: Repoet er offentleg, så bilete, rapportar og anna arkivmateriale må aldri bli sjekka inn.
+
+# Python-miljø
+.venv/
+__pycache__/
+*.pyc
+
+# Desktop-app: avhengnader og byggjeresultat
+desktop/node_modules/
+desktop/runtime/
+desktop/dist/
+
+# Arkivdata og testmateriale. Skal ikkje ut offentleg, og er dessutan fleire GB.
+testfiler/
+omdøypt/
+rapport/
+_research/
+*.zip
+
+# Loggar
+*.log
+
+# Hemmelegheiter
+.env
+*.pem
+*.pfx

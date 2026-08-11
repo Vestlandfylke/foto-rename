@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- ABOUTME: Oppstartsvindauge for desktop-appen, vist medan den lokale Python-backenden startar. -->
+<!-- ABOUTME: Heilt statisk og utan nettverk, slik at det kjem opp med ein gong appen blir opna. -->
+<html lang="nn">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';" />
+<title>Startar NB foto-namngivar</title>
+<style>
+  body {
+    margin: 0; height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px;
+    background: #0A3258; color: #fff; user-select: none;
+    font: 14px/1.5 -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  h1 { margin: 0; font-size: 17px; font-weight: 600; }
+  p { margin: 0; font-size: 13px; color: rgba(255,255,255,.72); }
+  .spinner {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 3px solid rgba(255,255,255,.22); border-top-color: #fff;
+    animation: spin 900ms linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div class="spinner"></div>
+  <h1>Startar NB foto-namngivar ...</h1>
+  <p>Gjer klar OCR-motoren. Fyrste oppstart tek litt lenger tid.</p>
+</body>
+</html>

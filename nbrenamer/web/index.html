@@ -1,0 +1,529 @@
+<!doctype html>
+<!-- ABOUTME: Web-UI for NB foto-namngivar. Vanilla HTML/CSS/JS, ingen byggjesteg, servert av FastAPI. -->
+<!-- ABOUTME: Tre steg: discover (OCR + rapport), gjennomgang/retting, og execute (kopier/omdøyp). -->
+<html lang="nn">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="favicon.ico" sizes="any" />
+<title>NB foto-namngivar</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  :root {
+    --bg: #eef2f7; --panel: #ffffff; --panel2: #f4f7fb; --border: #e2e8f0;
+    --text: #0f1b2d; --muted: #5b6b82; --brand: #0A3258; --accent: #0A3258; --ok: #15803d;
+    --warn: #b45309; --err: #dc2626; --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 'Inter', -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; background: var(--brand); color: #fff; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand .logo-box { background: #fff; border-radius: 6px; padding: 7px 11px; display: flex; align-items: center; }
+  .brand .logo-box img { height: 28px; width: auto; display: block; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; color: #fff; }
+  .badge { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.gpu { background: rgba(255,255,255,.16); color: #7ee2a8; }
+  .badge.cpu { background: rgba(255,255,255,.16); color: #f3c969; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  .steps { display: flex; gap: 8px; margin-bottom: 20px; }
+  .step-tab { flex: 1; padding: 12px; text-align: center; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; color: var(--muted); font-weight: 600; }
+  .step-tab.active { color: var(--brand); border-color: var(--accent); background: var(--panel); box-shadow: 0 1px 3px rgba(15,27,45,.08); }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; display: none; box-shadow: 0 1px 3px rgba(15,27,45,.06); }
+  .panel.active { display: block; }
+  .panel h2 { margin: 0 0 4px; font-size: 16px; }
+  .panel p.hint { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; flex: 1; min-width: 220px; }
+  .field label { font-size: 13px; color: var(--text); font-weight: 600; }
+  .help { font-size: 12px; color: var(--muted); line-height: 1.45; margin-top: 2px; }
+  .path-input { display: flex; gap: 8px; align-items: stretch; }
+  .path-input input { flex: 1; }
+  .path-input button { white-space: nowrap; }
+  details.advanced { margin: 4px 0 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel2); }
+  details.advanced > summary { cursor: pointer; padding: 11px 14px; font-weight: 600; font-size: 13px; color: var(--brand); list-style: none; }
+  details.advanced > summary::-webkit-details-marker { display: none; }
+  details.advanced > summary::before { content: '\25B8'; display: inline-block; margin-right: 8px; transition: transform .15s; }
+  details.advanced[open] > summary::before { transform: rotate(90deg); }
+  details.advanced .advanced-body { padding: 0 14px 6px; }
+  .dir-picker { padding: 14px; width: min(560px, 86vw); }
+  .dir-path { font-size: 13px; color: var(--muted); margin-bottom: 8px; word-break: break-all; min-height: 18px; }
+  .dir-list { border: 1px solid var(--border); border-radius: 8px; height: 320px; overflow-y: auto; background: var(--panel2); }
+  .dir-item { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 9px; font-size: 13px; }
+  .dir-item:last-child { border-bottom: none; }
+  .dir-item:hover { background: #e8eef6; }
+  .dir-item.empty { cursor: default; color: var(--muted); }
+  .dir-item.empty:hover { background: transparent; }
+  .dir-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  input[type=text], input[type=number], select { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; color: var(--text); font-size: 14px; }
+  input[type=text]:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(10,50,88,.12); }
+  input[type=checkbox] { accent-color: var(--brand); width: 16px; height: 16px; }
+  .check { display: flex; align-items: center; gap: 8px; min-width: auto; flex: 0 0 auto; }
+  .check input { width: 16px; height: 16px; }
+  .check-field { margin-bottom: 14px; }
+  .check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; }
+  .check-row input { width: 16px; height: 16px; flex: 0 0 auto; margin: 0; }
+  .check-field .help { margin-top: 3px; }
+  button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  button:hover { filter: brightness(1.1); }
+  button.secondary { background: var(--panel2); border: 1px solid var(--border); color: var(--brand); }
+  button.secondary:hover { filter: none; background: #e8eef6; border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .progress { margin-top: 16px; }
+  .bar { height: 10px; background: var(--bg); border-radius: 999px; overflow: hidden; border: 1px solid var(--border); }
+  .bar > div { height: 100%; background: var(--accent); width: 0%; transition: width .3s; }
+  .progress-meta { display: flex; justify-content: space-between; margin-top: 8px; color: var(--muted); font-size: 13px; }
+  .counts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .pill { padding: 4px 10px; border-radius: 8px; font-size: 12px; background: var(--panel2); border: 1px solid var(--border); }
+  .pill b { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  th { color: var(--muted); font-weight: 600; }
+  td img { width: 90px; height: 64px; object-fit: cover; border-radius: 6px; background: var(--bg); cursor: zoom-in; }
+  td input { width: 100%; }
+  .status-ok { color: var(--ok); } .status-manuell_ingen_id, .status-manuell_uventa_tal { color: var(--warn); } .status-feil { color: var(--err); }
+  .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .toolbar .grow { flex: 1; }
+  .msg { margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .msg.error { color: var(--err); }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); max-width: 90vw; max-height: 90vh; padding: 0; }
+  dialog img { max-width: 86vw; max-height: 80vh; display: block; }
+  dialog .dlg-head { display: flex; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo-box"><img src="logo_vestland.svg" alt="Vestland fylkeskommune" /></span>
+    <h1>NB foto-namngivar</h1>
+  </div>
+  <span id="gpuBadge" class="badge cpu">sjekkar maskinvare ...</span>
+</header>
+
+<main>
+  <div class="steps">
+    <div class="step-tab active" data-step="discover">1 · Les og rapporter</div>
+    <div class="step-tab" data-step="review">2 · Gjennomgå</div>
+    <div class="step-tab" data-step="execute">3 · Køyr omdøyping</div>
+  </div>
+
+  <!-- STEG 1: DISCOVER -->
+  <section id="panel-discover" class="panel active">
+    <h2>Les bileta og lag ei oversikt</h2>
+    <p class="hint">Her les appen teksten i bileta og føreslår nye namn. <b>Ingen filer blir endra eller flytta</b> i dette steget. Resultatet blir lagra i ei liste du går gjennom i steg 2.</p>
+    <div class="field">
+      <label>Mappe med bileta som skal lesast</label>
+      <div class="path-input">
+        <input type="text" id="d_input" placeholder="t.d. D:\Arkiv\NB-bilete" />
+        <button type="button" class="secondary browse" data-target="d_input">Bla gjennom ...</button>
+      </div>
+      <span class="help">Vel mappa der dei skanna bileta ligg. Appen tek med alle JPG-bilete i mappa og undermappene.</span>
+    </div>
+    <div class="field">
+      <label for="d_report">Kvar skal oversikta lagrast?</label>
+      <div class="path-input">
+        <input type="text" id="d_report" value="report.csv" />
+        <button type="button" class="secondary browse" data-target="d_report" data-pick="save">Bla gjennom ...</button>
+      </div>
+      <span class="help">Lista over alle bileta og dei føreslåtte namna blir lagra i denne fila. Du opnar henne i steg 2 for å sjå over. Namnet får automatisk dato og klokkeslett (t.d. <code>rapport_2026-06-26_2230.csv</code>) så køyringar ikkje overskriv kvarandre. Trykk «Bla gjennom ...» for å velje mappe, eller skriv eit eige namn i feltet.</span>
+    </div>
+    <div class="field">
+      <label for="d_device">Kva skal gjere jobben?</label>
+      <select id="d_device"><option value="gpu">Skjermkort (GPU) · raskast</option><option value="cpu">Prosessor (CPU)</option></select>
+      <span class="help">Skjermkortet er mykje raskare. Appen vel det beste automatisk, så dette treng du vanlegvis ikkje endre.</span>
+    </div>
+    <details class="advanced">
+      <summary>Avanserte val (treng vanlegvis ikkje endrast)</summary>
+      <div class="advanced-body">
+        <div class="field">
+          <label>Eiga mappe med TIFF-filer (valfritt)</label>
+          <div class="path-input">
+            <input type="text" id="d_tiff" placeholder="lat stå tom om TIFF ligg saman med bileta" />
+            <button type="button" class="secondary browse" data-target="d_tiff">Bla gjennom ...</button>
+          </div>
+          <span class="help">Berre om du har TIFF-versjonar av bileta i ei eiga mappe. Lat feltet stå tomt elles.</span>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Maks biletstorleik (px)</label>
+            <input type="number" id="d_maxdim" value="2048" />
+            <span class="help">Høgare tal kan gje litt betre lesing, men er tregare. 2048 passar for dei fleste.</span>
+          </div>
+          <div class="field">
+            <label>Leseretningar (grader)</label>
+            <input type="text" id="d_rot" value="0,90,270" />
+            <span class="help">Appen prøver å lese teksten i desse vinklane, i tilfelle eit bilete ligg på sida. Lat stå som det er.</span>
+          </div>
+        </div>
+        <div class="check-field">
+          <label class="check-row"><input type="checkbox" id="d_auto" checked /><span>Forsterk svak tekst (autokontrast)</span></label>
+          <span class="help">Gjer bleik eller svak tekst lettare å lese. Bør stå på.</span>
+        </div>
+        <div class="check-field">
+          <label class="check-row"><input type="checkbox" id="d_resume" /><span>Hald fram der me slapp</span></label>
+          <span class="help">Hoppar over bilete som alt er lesne. Nyttig om ei tidlegare køyring vart avbroten.</span>
+        </div>
+      </div>
+    </details>
+    <button id="d_start">Start lesing</button>
+    <div class="progress" id="d_prog" style="display:none">
+      <div class="bar"><div id="d_bar"></div></div>
+      <div class="progress-meta"><span id="d_cur"></span><span id="d_pct"></span></div>
+      <div class="counts" id="d_counts"></div>
+      <button class="secondary" id="d_cancel" style="margin-top:12px">Avbryt</button>
+    </div>
+    <div class="msg" id="d_msg"></div>
+    <button id="d_goto2" style="display:none;margin-top:12px">Gå vidare til steg 2: Gjennomgå</button>
+  </section>
+
+  <!-- STEG 2: REVIEW -->
+  <section id="panel-review" class="panel">
+    <h2>Sjå over og rett opp</h2>
+    <p class="hint">Her ser du kvart bilete med det føreslåtte namnet. Klikk på eit bilete for å sjå det stort. Rett <b>Foto-ID</b> (det nye namnet) eller <b>status</b> der det trengst, og trykk <b>Lagre endringar</b>. Framleis blir ingen filer endra. Bruk filteret for å sjå berre dei som treng handarbeid.</p>
+    <div class="toolbar">
+      <input type="text" id="r_report" value="report.csv" style="min-width:220px" title="Fila frå steg 1" />
+      <button type="button" class="secondary browse" data-target="r_report" data-pick="open">Bla gjennom ...</button>
+      <select id="r_filter">
+        <option value="">Alle</option>
+        <option value="ok">ok</option>
+        <option value="manuell_ingen_id">manuell_ingen_id</option>
+        <option value="manuell_uventa_tal">manuell_uventa_tal</option>
+        <option value="feil">feil</option>
+      </select>
+      <button class="secondary" id="r_load">Hent</button>
+      <span class="grow"></span>
+      <span id="r_counts" class="msg"></span>
+      <button id="r_save" disabled>Lagre endringar</button>
+    </div>
+    <table id="r_table"><thead><tr>
+      <th>Bilete</th><th>Originalnamn</th><th>Rå ID</th><th>Foto-ID (nytt namn)</th><th>Status</th><th>Grunngjeving</th>
+    </tr></thead><tbody></tbody></table>
+    <div class="msg" id="r_msg"></div>
+    <button id="r_goto3" style="margin-top:12px">Gå vidare til steg 3: Køyr omdøyping</button>
+  </section>
+
+  <!-- STEG 3: EXECUTE -->
+  <section id="panel-execute" class="panel">
+    <h2>Lag dei omdøypte bileta</h2>
+    <p class="hint">No lagar appen bileta med dei nye namna i mappa du vel. Som standard blir originalane <b>kopierte</b>, så dei opphavlege filene blir verande urørte. Bilete utan identifisert namn hamnar i ei undermappe som heiter <code>_manuell\</code> med det opphavlege namnet.</p>
+    <div class="field">
+      <label>Oversikta frå steg 1 og 2</label>
+      <div class="path-input">
+        <input type="text" id="e_report" value="report.csv" />
+        <button type="button" class="secondary browse" data-target="e_report" data-pick="open">Bla gjennom ...</button>
+      </div>
+      <span class="help">Same fila som du laga og retta i dei førre stega.</span>
+    </div>
+    <div class="field">
+      <label>Kvar skal dei omdøypte bileta leggast?</label>
+      <div class="path-input">
+        <input type="text" id="e_output" placeholder="t.d. D:\Arkiv\NB-omdøypt" />
+        <button type="button" class="secondary browse" data-target="e_output">Bla gjennom ...</button>
+      </div>
+      <span class="help">Vel ei mappe der resultatet skal liggje. Helst ei tom eller ny mappe.</span>
+    </div>
+    <div class="check-field">
+      <label class="check-row"><input type="checkbox" id="e_year" checked /><span>Sorter i mapper per år</span></label>
+      <span class="help">Lagar ei undermappe for kvart år</span>
+    </div>
+    <div class="check-field">
+      <label class="check-row"><input type="checkbox" id="e_over" /><span>Skriv over filer som alt finst</span></label>
+      <span class="help">Erstattar filer med same namn i ut-mappa. Lat stå av om du er usikker.</span>
+    </div>
+    <button id="e_start" style="margin-top:16px">Start omdøyping</button>
+    <div class="progress" id="e_prog" style="display:none">
+      <div class="bar"><div id="e_bar"></div></div>
+      <div class="progress-meta"><span id="e_cur"></span><span id="e_pct"></span></div>
+    </div>
+    <div class="msg" id="e_msg"></div>
+  </section>
+</main>
+
+<dialog id="imgDlg">
+  <div class="dlg-head"><span id="dlgName"></span><button class="secondary" onclick="document.getElementById('imgDlg').close()">Lukk</button></div>
+  <img id="dlgImg" src="" alt="" />
+</dialog>
+
+<dialog id="dirDlg">
+  <div class="dlg-head"><span>Vel mappe</span><button class="secondary" onclick="document.getElementById('dirDlg').close()">Avbryt</button></div>
+  <div class="dir-picker">
+    <div class="dir-path" id="dirCurrent"></div>
+    <div class="dir-list" id="dirList"></div>
+    <div class="dir-actions">
+      <button class="secondary" id="dirUp">Eit nivå opp</button>
+      <span class="grow"></span>
+      <button id="dirChoose">Vel denne mappa</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const api = (url, opts) => fetch(url, opts).then(async r => { if (!r.ok) throw new Error((await r.json().catch(()=>({detail:r.statusText}))).detail); return r.json(); });
+
+// Tab-navigasjon
+function goToStep(step) {
+  document.querySelectorAll('.step-tab').forEach(t => t.classList.toggle('active', t.dataset.step === step));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + step));
+}
+document.querySelectorAll('.step-tab').forEach(tab => tab.onclick = () => goToStep(tab.dataset.step));
+
+// ---- Tidsstempla rapportnamn (unngå overskriving) ----
+const pad2 = (n) => String(n).padStart(2, '0');
+function reportTimestamp() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+}
+function defaultReportName() { return `rapport_${reportTimestamp()}.csv`; }
+function joinPath(dir, name) { const sep = (dir.endsWith('\\') || dir.endsWith('/')) ? '' : '\\'; return dir + sep + name; }
+const AUTO_REPORT_RE = /^rapport_\d{4}-\d{2}-\d{2}_\d{6}\.csv$/;
+// Friskar opp tidsstempelet ved ny lesing, men berre om brukaren ikkje har skrive eit eige namn.
+function refreshReportIfDefault() {
+  const v = $('d_report').value.trim();
+  const i = Math.max(v.lastIndexOf('\\'), v.lastIndexOf('/'));
+  const dir = i >= 0 ? v.slice(0, i + 1) : '';
+  const base = i >= 0 ? v.slice(i + 1) : v;
+  if (AUTO_REPORT_RE.test(base) || base === 'report.csv' || base === '') {
+    $('d_report').value = dir + defaultReportName();
+  }
+}
+$('d_report').value = defaultReportName();
+
+// Maskinvare-status + standard rapportmappe
+api('/api/status').then(s => {
+  const b = $('gpuBadge');
+  if (s.gpu_available) { b.className = 'badge gpu'; b.textContent = 'GPU: ' + (s.gpu_name || 'CUDA'); }
+  else { b.className = 'badge cpu'; b.textContent = 'CPU (ingen CUDA-GPU funnen)'; $('d_device').value = 'cpu'; }
+  // Legg rapporten i standardmappa når brukaren ikkje alt har vald ei eiga mappe.
+  if (s.report_dir) {
+    const cur = $('d_report').value.trim();
+    if (!/[\\/]/.test(cur)) $('d_report').value = joinPath(s.report_dir, cur || defaultReportName());
+  }
+}).catch(()=>{});
+
+const thumb = (path) => '/api/thumb?path=' + encodeURIComponent(path);
+function showImg(path, name) { $('dlgImg').src = thumb(path) + '&max_dim=1600'; $('dlgName').textContent = name; $('imgDlg').showModal(); }
+
+// ---- Mappeveljar ----
+const FOLDER_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0A3258" stroke-width="2" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const DRIVE_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0A3258" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="16" cy="12" r="1.2" fill="#0A3258" stroke="none"/></svg>';
+let dirTargetInput = null;   // input-feltet som skal fyllast
+let dirCurrentPath = '';     // '' = disk-/rotnivå (ingen mappe vald enno)
+let dirPickMode = 'dir';     // 'dir' = vel mappe, 'file' = vel mappe + behald filnamn
+
+const baseName = (p) => p.split(/[\\/]/).pop();
+const parentDir = (p) => { const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')); return i >= 0 ? p.slice(0, i) : ''; };
+
+document.querySelectorAll('button.browse').forEach(b => b.onclick = () => browse(b.dataset.target, b.dataset.pick || 'folder', b));
+
+let pickerBusy = false;
+function setBrowseBusy(busy, activeBtn) {
+  pickerBusy = busy;
+  document.querySelectorAll('button.browse').forEach(b => b.disabled = busy);
+  if (activeBtn) activeBtn.textContent = busy ? 'Opnar ...' : 'Bla gjennom ...';
+}
+
+// Prøv den ekte Windows-dialogen først (køyrer lokalt). Fell tilbake til web-veljaren under
+// om backend ikkje kan opne han (t.d. ikkje-Windows eller manglar skjerm).
+async function browse(inputId, pick, btn) {
+  if (pickerBusy) return;
+  const input = $(inputId);
+  setBrowseBusy(true, btn);
+  try {
+    const r = await fetch('/api/pick?mode=' + pick + '&initial=' + encodeURIComponent(input.value.trim()));
+    if (r.status === 409) return;          // ein dialog er alt open
+    if (!r.ok) { openCustomPicker(input, pick); return; }  // backend kan ikkje opne native, bruk web-veljaren
+    const res = await r.json();
+    if (res.cancelled) return;
+    if (res.path) input.value = res.path;
+  } catch (e) {
+    openCustomPicker(input, pick);
+  } finally {
+    setBrowseBusy(false, btn);
+  }
+}
+
+function openCustomPicker(input, pick) {
+  dirTargetInput = input;
+  dirPickMode = (pick === 'folder') ? 'dir' : 'file';
+  $('dirChoose').textContent = dirPickMode === 'file' ? 'Bruk denne mappa' : 'Vel denne mappa';
+  $('dirDlg').showModal();
+  const val = input.value.trim();
+  loadDir(dirPickMode === 'file' ? parentDir(val) : val);
+}
+
+async function loadDir(path) {
+  $('dirCurrent').textContent = 'Hentar ...';
+  $('dirList').innerHTML = '';
+  try {
+    const d = await api('/api/browse' + (path ? '?path=' + encodeURIComponent(path) : ''));
+    dirCurrentPath = d.path || '';
+    const list = $('dirList');
+    if (d.is_root || !d.path) {
+      $('dirCurrent').textContent = 'Vel ein disk';
+      $('dirChoose').disabled = true;
+      for (const drv of d.drives) list.appendChild(dirItem(drv.name, drv.path, DRIVE_SVG));
+    } else {
+      $('dirCurrent').textContent = d.path;
+      $('dirChoose').disabled = false;
+      if (!d.dirs.length) {
+        const e = document.createElement('div');
+        e.className = 'dir-item empty'; e.textContent = 'Ingen undermapper her';
+        list.appendChild(e);
+      }
+      for (const dir of d.dirs) list.appendChild(dirItem(dir.name, dir.path, FOLDER_SVG));
+    }
+    $('dirUp').dataset.parent = d.parent ?? '';
+    $('dirUp').disabled = !d.path;
+  } catch (e) {
+    $('dirCurrent').textContent = e.message;
+  }
+}
+
+function dirItem(name, path, icon) {
+  const el = document.createElement('div');
+  el.className = 'dir-item';
+  el.innerHTML = icon + '<span></span>';
+  el.querySelector('span').textContent = name;
+  el.onclick = () => loadDir(path);
+  return el;
+}
+
+$('dirUp').onclick = () => loadDir($('dirUp').dataset.parent || '');
+$('dirChoose').onclick = () => {
+  if (dirTargetInput && dirCurrentPath) {
+    if (dirPickMode === 'file') {
+      const fname = baseName(dirTargetInput.value.trim()) || 'report.csv';
+      const sep = dirCurrentPath.endsWith('\\') || dirCurrentPath.endsWith('/') ? '' : '\\';
+      dirTargetInput.value = dirCurrentPath + sep + fname;
+    } else {
+      dirTargetInput.value = dirCurrentPath;
+    }
+  }
+  $('dirDlg').close();
+};
+
+// ---- Discover ----
+let pollTimer = null;
+function poll(onState) {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    const j = await api('/api/job');
+    onState(j);
+    if (j.state !== 'running') clearInterval(pollTimer);
+  }, 600);
+}
+
+$('d_start').onclick = async () => {
+  $('d_msg').className = 'msg'; $('d_msg').textContent = '';
+  $('d_goto2').style.display = 'none';
+  refreshReportIfDefault();
+  const body = {
+    input_dir: $('d_input').value.trim(), report: $('d_report').value.trim(),
+    tiff_dir: $('d_tiff').value.trim() || null, device: $('d_device').value,
+    max_dim: +$('d_maxdim').value, rotations: $('d_rot').value.trim(),
+    autocontrast: $('d_auto').checked, resume: $('d_resume').checked,
+  };
+  try {
+    await api('/api/discover/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    $('d_prog').style.display = 'block'; $('d_start').disabled = true;
+    poll(updateDiscover);
+  } catch (e) { $('d_msg').className = 'msg error'; $('d_msg').textContent = e.message; }
+};
+$('d_cancel').onclick = () => api('/api/cancel', { method: 'POST' });
+
+function updateDiscover(j) {
+  const pct = j.total ? Math.round(100 * j.processed / j.total) : 0;
+  $('d_bar').style.width = pct + '%';
+  $('d_cur').textContent = j.current ? ('Les: ' + j.current) : (j.message || '');
+  $('d_pct').textContent = j.processed + ' / ' + j.total + ' · ' + j.elapsed + 's · ' + (j.device ? j.device.toUpperCase() : '');
+  $('d_counts').innerHTML = Object.entries(j.counts).map(([k,v]) => `<span class="pill">${k}: <b>${v}</b></span>`).join('');
+  if (j.state !== 'running') {
+    $('d_start').disabled = false;
+    $('d_msg').className = 'msg' + (j.state === 'error' ? ' error' : '');
+    $('d_msg').textContent = (j.state === 'done' ? 'Ferdig. ' : j.state === 'cancelled' ? 'Avbroten. ' : 'Feil: ') + (j.message || '');
+    if (j.state === 'done') { $('r_report').value = $('d_report').value; $('e_report').value = $('d_report').value; }
+    $('d_goto2').style.display = (j.state === 'done') ? 'inline-block' : 'none';
+  }
+}
+
+// Gå til steg 2, ta med rapportstien frå steg 1 og hent oversikta automatisk.
+$('d_goto2').onclick = () => { $('r_report').value = $('d_report').value; goToStep('review'); $('r_load').click(); };
+
+// Gå til steg 3 og ta med rapportstien frå steg 2.
+$('r_goto3').onclick = () => { $('e_report').value = $('r_report').value; goToStep('execute'); };
+
+// ---- Review ----
+let reviewRows = [];
+$('r_load').onclick = async () => {
+  $('r_msg').textContent = '';
+  try {
+    const url = '/api/report?path=' + encodeURIComponent($('r_report').value.trim()) + (($('r_filter').value) ? '&status=' + $('r_filter').value : '');
+    const data = await api(url);
+    reviewRows = data.rows;
+    $('r_counts').textContent = Object.entries(data.counts).map(([k,v]) => `${k}: ${v}`).join('  ·  ') + `  (viser ${data.rows.length}/${data.total})`;
+    renderReview();
+    $('r_save').disabled = false;
+  } catch (e) { $('r_msg').className = 'msg error'; $('r_msg').textContent = e.message; }
+};
+
+function renderReview() {
+  const tb = $('r_table').querySelector('tbody');
+  tb.innerHTML = '';
+  for (const r of reviewRows) {
+    const tr = document.createElement('tr');
+    const name = r.original_jpg.split(/[\\/]/).pop();
+    tr.innerHTML = `
+      <td><img loading="lazy" src="${thumb(r.original_jpg)}" onclick="showImg('${r.original_jpg.replace(/\\/g,'\\\\')}','${name}')" /></td>
+      <td>${name}</td>
+      <td>${r.raw_id || ''}</td>
+      <td><input type="text" value="${r.foto_id || ''}" data-k="foto_id" /></td>
+      <td><select data-k="status">
+        ${['ok','manuell_ingen_id','manuell_uventa_tal','feil'].map(s => `<option ${s===r.status?'selected':''}>${s}</option>`).join('')}
+      </select></td>
+      <td class="status-${r.status}">${r.error || ''}</td>`;
+    tr.querySelectorAll('[data-k]').forEach(el => el.onchange = () => { r[el.dataset.k] = el.value; if (el.dataset.k==='foto_id') r.new_basename = el.value; });
+    tb.appendChild(tr);
+  }
+}
+
+$('r_save').onclick = async () => {
+  try {
+    const payload = { report: $('r_report').value.trim(), rows: reviewRows.map(r => ({ original_jpg: r.original_jpg, foto_id: r.foto_id, new_basename: r.foto_id, status: r.status })) };
+    const res = await api('/api/report/save', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    $('r_msg').className = 'msg'; $('r_msg').textContent = `Lagra ${res.updated} rader.`;
+  } catch (e) { $('r_msg').className = 'msg error'; $('r_msg').textContent = e.message; }
+};
+
+// ---- Execute ----
+$('e_start').onclick = async () => {
+  $('e_msg').className = 'msg'; $('e_msg').textContent = '';
+  const body = { report: $('e_report').value.trim(), output_dir: $('e_output').value.trim(), move: false, overwrite: $('e_over').checked, organize_by_year: $('e_year').checked };
+  try {
+    await api('/api/execute/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    $('e_prog').style.display = 'block'; $('e_start').disabled = true;
+    poll(updateExecute);
+  } catch (e) { $('e_msg').className = 'msg error'; $('e_msg').textContent = e.message; }
+};
+
+function updateExecute(j) {
+  const pct = j.total ? Math.round(100 * j.processed / j.total) : 0;
+  $('e_bar').style.width = pct + '%';
+  $('e_cur').textContent = j.current || j.message || '';
+  $('e_pct').textContent = j.processed + ' / ' + j.total + ' · ' + j.elapsed + 's';
+  if (j.state !== 'running') {
+    // Hald knappen grå når omdøypinga er ferdig. Ved feil/avbrot kan ein prøve på nytt.
+    $('e_start').disabled = (j.state === 'done');
+    const r = j.result || {};
+    $('e_msg').className = 'msg' + (j.state === 'error' ? ' error' : '');
+    $('e_msg').textContent = j.state === 'done'
+      ? `Ferdig. Omdøypt: ${r['omdøypt']||0}, manuell: ${r['manuell']||0}, konfliktar: ${r['konflikt']||0}.`
+      : (j.state === 'cancelled' ? 'Avbroten.' : 'Feil: ' + (j.message||''));
+  }
+}
+
+// Gjer omdøypingsknappen aktiv igjen om brukaren endrar noko for ei ny køyring.
+['e_report', 'e_output', 'e_year', 'e_over'].forEach(id =>
+  $(id).addEventListener('change', () => { $('e_start').disabled = false; }));
+</script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!doctype html>
+<!-- ABOUTME: Framdriftsvindauge for nedlasting av ei ny versjon av appen. -->
+<!-- ABOUTME: Hovudprosessen matar inn tal via window.setProgress og window.setVersion. -->
+<html lang="nn">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+<title>Lastar ned oppdatering</title>
+<style>
+  :root { --brand: #0A3258; --border: #e2e8f0; --muted: #5b6b82; --bg: #eef2f7; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex; flex-direction: column;
+    background: var(--bg); color: #0f1b2d; user-select: none;
+    font: 14px/1.5 -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  header { padding: 16px 22px; background: var(--brand); color: #fff; }
+  header h1 { margin: 0; font-size: 15px; font-weight: 600; }
+  header p { margin: 2px 0 0; font-size: 12px; color: rgba(255,255,255,.72); }
+  main { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 0 22px; }
+  .bar { height: 12px; background: #fff; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+  .bar > div { height: 100%; width: 0%; background: var(--brand); transition: width .25s; }
+  .meta { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+  .meta b { color: #0f1b2d; font-variant-numeric: tabular-nums; }
+  footer { padding: 0 22px 16px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <header>
+    <h1 id="title">Lastar ned oppdatering</h1>
+    <p>Appen blir oppdatert til den nye versjonen når nedlastinga er ferdig.</p>
+  </header>
+  <main>
+    <div class="bar"><div id="fill"></div></div>
+    <div class="meta">
+      <span id="size">Startar ...</span>
+      <b id="percent">0 %</b>
+    </div>
+  </main>
+  <footer>Lukk vindauget for å avbryte nedlastinga.</footer>
+<script>
+  const fill = document.getElementById('fill');
+  const percentText = document.getElementById('percent');
+  const sizeText = document.getElementById('size');
+  const title = document.getElementById('title');
+
+  const mb = (bytes) => (bytes / 1024 / 1024).toLocaleString('nn-NO', { maximumFractionDigits: 1 });
+
+  window.setVersion = (version) => {
+    title.textContent = `Lastar ned versjon ${version}`;
+  };
+
+  window.setProgress = ({ percent, transferred, total, bytesPerSecond }) => {
+    fill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+    percentText.textContent = `${percent.toLocaleString('nn-NO', { maximumFractionDigits: 0 })} %`;
+    const speed = bytesPerSecond > 0 ? ` (${mb(bytesPerSecond)} MB/s)` : '';
+    sizeText.textContent = `${mb(transferred)} MB av ${mb(total)} MB${speed}`;
+  };
+</script>
+</body>
+</html>

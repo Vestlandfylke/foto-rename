@@ -1,0 +1,49 @@
+# ABOUTME: Byggjekonfigurasjon for Windows-installasjonsfila (NSIS) til NB foto-namngivar.
+# ABOUTME: Legg Python-runtime og nbrenamer-pakken ved sida av appen som resources/runtime og resources/backend.
+appId: no.vestlandfylke.nbfotonamngivar
+productName: NB foto-namngivar
+copyright: Vestland fylkeskommune
+
+directories:
+  output: dist
+  buildResources: build
+
+# Oppdateringar blir henta frå GitHub-releases. electron-builder legg ved latest.yml og
+# ei .blockmap-fil, som gjer at appen berre lastar ned dei delane av installasjonsfila
+# som faktisk er endra. releaseType: draft gjer at ingen får oppdateringa før eit menneske
+# har trykt "Publish release" i GitHub.
+publish:
+  provider: github
+  owner: Vestlandfylke
+  repo: foto-rename
+  releaseType: draft
+
+files:
+  - src/**/*
+  - package.json
+
+# Python-miljøet blir laga av scripts/build-runtime.ps1 før pakking.
+extraResources:
+  - from: runtime
+    to: runtime
+  - from: ../nbrenamer
+    to: backend/nbrenamer
+    filter:
+      - "**/*"
+      - "!__pycache__/**"
+
+compression: maximum
+
+win:
+  target: nsis
+  artifactName: NB-foto-namngivar-Setup-${version}.exe
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: NB foto-namngivar
+  # Installasjonen inneheld eit stort Python-miljø, så avinstalleringa må rydde heile mappa.
+  deleteAppDataOnUninstall: false

@@ -1,0 +1,67 @@
+# ABOUTME: Byggjer Windows-installasjonsfila og legg ho som eit release-utkast på GitHub når ein versjons-tag blir pusha.
+# ABOUTME: Kan òg køyrast manuelt for å testbyggje utan å publisere noko.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: desktop
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      # Installasjonsfila og latest.yml får versjonen sin frå package.json, ikkje frå taggen.
+      # Er dei ulike, ville brukarane fått tilbod om ein versjon som ikkje finst.
+      - name: Sjekk at taggen stemmer med package.json
+        if: github.ref_type == 'tag'
+        run: |
+          $tag = "${{ github.ref_name }}" -replace '^v', ''
+          $pkg = (Get-Content package.json | ConvertFrom-Json).version
+          if ($tag -ne $pkg) {
+            throw "Taggen er $tag, men package.json seier $pkg. Oppdater versjonen og lag taggen på nytt."
+          }
+          Write-Host "Versjon $pkg"
+
+      - name: Installer npm-avhengnader
+        run: npm ci
+
+      - name: Byggje Python-runtime
+        run: .\scripts\build-runtime.ps1
+
+      - name: Byggje installasjonsfil
+        if: github.ref_type != 'tag'
+        run: npm run dist
+
+      - name: Byggje og publisere release-utkast
+        if: github.ref_type == 'tag'
+        run: npm run publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Ved manuell køyring: last ned installasjonsfila frå denne sida for å teste henne.
+      - name: Ta vare på installasjonsfila
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: installasjonsfil
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/latest.yml
+          if-no-files-found: error
