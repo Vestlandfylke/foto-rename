@@ -12,6 +12,7 @@ desktop/runtime/
 desktop/dist/
 
 # Arkivdata og testmateriale. Skal ikkje ut offentleg, og er dessutan fleire GB.
+tmp/
 testfiler/
 omdøypt/
 rapport/

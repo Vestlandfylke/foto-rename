@@ -1,5 +1,5 @@
 # ABOUTME: CLI for NB foto-namngivar. Tynn wrapper over nbrenamer-pakken (to-fase: discover -> execute, pluss test).
-# ABOUTME: Gir re-digitaliserte NB-fotofiler nye ID-baserte namn etter spesifikasjonen i foto/Namngiving...docx.
+# ABOUTME: Gir re-digitaliserte NB-fotofiler nye ID-baserte namn etter namngivingsregelen, sjå README.
 from __future__ import annotations
 
 import argparse

@@ -4,7 +4,7 @@ Verktøy som gir re-digitaliserte fotofiler frå Nasjonalbiblioteket nye, ID-bas
 
 ## Namngivingsregelen
 
-Spesifikasjonen ligg i `foto/Namngiving av fotofiler til arkivet.docx`. Kort fortalt:
+Spesifikasjonen står i det interne dokumentet «Namngiving av fotofiler til arkivet.docx», som ikkje ligg i dette repoet. Kort fortalt:
 
 - ID-en i motivet ser ut som `SFFf-94263.0001`.
 - Taldelen manglar dei to første siffera i årstalet. Viss taldelen byrjar på **8 eller 9**, blir `19` lagt framføre, slik at `94263` blir `1994263`. Det gir Foto-ID `SFFf-1994263.0001`, akkurat som i databasen.
@@ -57,7 +57,7 @@ Enklast: dobbeltklikk `Start NB foto-namngivar.bat` (sjå "Kom i gang" over). Fr
 .\start-app.ps1
 ```
 
-Begge opnar nettlesaren på `http://127.0.0.1:8000` automatisk. (`run-web.ps1` finst framleis for manuell start utan auto-opning.) Appen køyrer lokalt og arbeider på server-side mapper du skriv inn (ein nettlesar kan ikkje sende ekte filstiar, og dei store TIFF-ane kan ikkje lastast opp). Tre steg i UI-et:
+Begge opnar nettlesaren på `http://127.0.0.1:8000` automatisk. Appen køyrer lokalt og arbeider på server-side mapper du skriv inn (ein nettlesar kan ikkje sende ekte filstiar, og dei store TIFF-ane kan ikkje lastast opp). Tre steg i UI-et:
 
 1. **Les og rapporter**: vel inn-mappe, eining (GPU/CPU) og innstillingar, start OCR og følg framdrifta live.
 2. **Gjennomgå**: hent rapporten, sjå miniatyrbilete, rett Foto-ID/status der det trengst, og lagre.
