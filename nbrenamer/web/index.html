@@ -325,13 +325,19 @@ function setBrowseBusy(busy, activeBtn) {
   if (activeBtn) activeBtn.textContent = busy ? 'Opnar ...' : 'Bla gjennom ...';
 }
 
-// Prøv den ekte Windows-dialogen først (køyrer lokalt). Fell tilbake til web-veljaren under
-// om backend ikkje kan opne han (t.d. ikkje-Windows eller manglar skjerm).
+// Tre nivå, i denne rekkjefølgja: systemdialogen i desktop-appen, som er den raske og
+// riktige, så den same dialogen via backenden (nettlesaren har ikkje noko anna val, men
+// backenden må starte PowerShell for kvart klikk), og til slutt web-veljaren under.
 async function browse(inputId, pick, btn) {
   if (pickerBusy) return;
   const input = $(inputId);
   setBrowseBusy(true, btn);
   try {
+    if (window.nbrDesktop) {
+      const res = await window.nbrDesktop.pickPath(pick, input.value.trim());
+      if (res.path) input.value = res.path;
+      return;
+    }
     const r = await fetch('/api/pick?mode=' + pick + '&initial=' + encodeURIComponent(input.value.trim()));
     if (r.status === 409) return;          // ein dialog er alt open
     if (!r.ok) { openCustomPicker(input, pick); return; }  // backend kan ikkje opne native, bruk web-veljaren

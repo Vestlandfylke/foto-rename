@@ -2,7 +2,7 @@
 // ABOUTME: Backenden bind seg til 127.0.0.1 på ein ledig port, og blir alltid avslutta saman med appen.
 "use strict";
 
-const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -317,6 +317,53 @@ function fatal(title, message) {
   stopBackend().finally(() => app.exit(1));
 }
 
+const CSV_FILTERS = [
+  { name: "CSV-filer", extensions: ["csv"] },
+  { name: "Alle filer", extensions: ["*"] },
+];
+
+/**
+ * Startstien dialogen skal opne på. Windows ignorerer ein sti som ikkje finst, så me sender
+ * berre med det som faktisk ligg der: mappa sjølv, eller mappa til eit filnamn.
+ */
+function dialogDefaultPath(mode, initial) {
+  if (!initial) return undefined;
+  if (mode === "folder") return fs.existsSync(initial) ? initial : undefined;
+  return fs.existsSync(path.dirname(initial)) ? initial : undefined;
+}
+
+/**
+ * Systemdialogen bak «Bla gjennom ...» i UI-et. I nettlesaren må dette gå om backenden, som
+ * startar ein eigen PowerShell-prosess per klikk og kompilerer mappeveljaren fyrste gongen.
+ * Her er dialogen ein del av appen, så han opnar seg med ein gong og blir modal over
+ * vindauget i staden for å kunne hamne bak det.
+ */
+function registerPickHandler() {
+  ipcMain.handle("pick-path", async (event, { mode, initial } = {}) => {
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    const defaultPath = dialogDefaultPath(mode, typeof initial === "string" ? initial.trim() : "");
+
+    if (mode === "save") {
+      const { canceled, filePath } = await dialog.showSaveDialog(parent, {
+        title: "Lagre rapportfila",
+        filters: CSV_FILTERS,
+        defaultPath,
+      });
+      return canceled ? { cancelled: true } : { path: filePath };
+    }
+
+    const folder = mode === "folder";
+    if (!folder && mode !== "open") throw new Error(`Ukjent dialogmodus: ${mode}`);
+    const { canceled, filePaths } = await dialog.showOpenDialog(parent, {
+      title: folder ? "Vel mappe" : "Vel rapportfil",
+      properties: [folder ? "openDirectory" : "openFile"],
+      filters: folder ? undefined : CSV_FILTERS,
+      defaultPath,
+    });
+    return canceled ? { cancelled: true } : { path: filePaths[0] };
+  });
+}
+
 function createSplash() {
   splashWindow = new BrowserWindow({
     width: 460,
@@ -345,7 +392,12 @@ function createMainWindow(url) {
     backgroundColor: "#eef2f7",
     title: "NB foto-namngivar",
     icon: APP_ICON,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, spellcheck: false },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      spellcheck: false,
+      preload: path.join(__dirname, "preload.js"),
+    },
   });
 
   // Alt utanfor den lokale backenden skal opnast i systemnettlesaren, ikkje i appvindauget.
@@ -461,6 +513,7 @@ function buildMenu() {
 async function boot() {
   openLog();
   buildMenu();
+  registerPickHandler();
   createSplash();
 
   try {

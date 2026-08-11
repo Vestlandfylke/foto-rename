@@ -87,6 +87,7 @@ Resultatet blir `desktop\dist\NB-foto-namngivar-Setup-<versjon>.exe`. Merk:
 
 - I ein installert app kan programmappa vere skriveverna, så rapportane hamnar i `Dokument\NB foto-namngivar\rapport`. Du kan overstyre dette med miljøvariabelen `NBR_REPORT_DIR`.
 - Backend-loggen finn du via menyen: **Hjelp → Opne loggmappa**.
+- «Bla gjennom ...» brukar systemdialogen i Electron, via `src\preload.js`. Browser-appen har ikkje tilgang til han og går difor om `/api/pick` i backenden, som startar ein PowerShell-prosess per klikk. Difor finst begge vegane.
 - Ikonet er eit fotokort med lupe i Vestland-fargane. Grunnlaget er `desktop\build\icon.png` (1024x1024). Endrar du det, køyr `.venv\Scripts\python.exe desktop\scripts\make_icons.py --zoom 0.09` for å byggje `build\icon.ico` (installasjonsfil og .exe), `src\icon.png` (appvindauga) og `nbrenamer\web\favicon.ico` på nytt.
 
 ### Oppdateringar
