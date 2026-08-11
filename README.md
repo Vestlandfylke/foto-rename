@@ -57,9 +57,11 @@ Enklast: dobbeltklikk `Start NB foto-namngivar.bat` (sjå "Kom i gang" over). Fr
 .\start-app.ps1
 ```
 
-Begge opnar nettlesaren på `http://127.0.0.1:8000` automatisk. Appen køyrer lokalt og arbeider på server-side mapper du skriv inn (ein nettlesar kan ikkje sende ekte filstiar, og dei store TIFF-ane kan ikkje lastast opp). Tre steg i UI-et:
+Begge opnar nettlesaren på `http://127.0.0.1:8000` automatisk. Appen køyrer lokalt og arbeider på server-side mapper du skriv inn (ein nettlesar kan ikkje sende ekte filstiar, og dei store TIFF-ane kan ikkje lastast opp).
 
-1. **Les og rapporter**: vel inn-mappe, eining (GPU/CPU) og innstillingar, start OCR og følg framdrifta, med tid att undervegs.
+Grensesnittet er bygd som eit programvindauge, ikkje som ei nettside: verktøylinje med logo øvst, faner for dei tre stega, ei arbeidsflate som fyller vindauget og rullar for seg sjølv med tabellhovudet fastlåst, og ei statuslinje langs botnen som viser kva appen gjer, kva rapport som er open, kor mange rader ho har og om jobben går på GPU eller CPU. Tre steg i UI-et:
+
+1. **Les og rapporter**: vel inn-mappe, eining (GPU/CPU) og innstillingar, start OCR og følg framdrifta, med tid att undervegs. Under **Avanserte val** vel du kvar ID-stripa ligg på bileta (nedst, langs venstre eller høgre kant, eller opp ned) i staden for å skrive gradar. Appen prøver retningane i tur og orden og stoppar ved fyrste treff, så kvar ekstra retning kostar berre tid på bilete som ikkje gav treff før.
 2. **Gjennomgå**: hent rapporten og rett Foto-ID/status der det trengst. Rapportar med mange bilete blir henta 200 rader om gongen, med Førre/Neste under tabellen. Skal du rette mange, vel **Treng handarbeid** i filteret og trykk **Start gjennomgang**: eitt bilete om gongen i stor visning, snudd same veg som OCR-en las det, med OCR-teksten ved sida og ID-feltet i fokus. <kbd>Enter</kbd> går vidare, <kbd>Shift</kbd>+<kbd>Enter</kbd> tilbake, <kbd>Ctrl</kbd>+<kbd>S</kbd> lagrar, <kbd>Esc</kbd> lukkar. Appen varslar om ein ID ikkje passar mønsteret, eller om same ID er brukt på fleire bilete.
 3. **Køyr omdøyping**: vel ut-mappe. Før noko blir skrive, viser appen kor mange som får nytt namn, kor mange som hamnar i `_manuell`, og eventuelle ID-kollisjonar, til stadfesting.
 

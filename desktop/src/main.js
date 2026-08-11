@@ -437,7 +437,7 @@ function createMainWindow(url) {
     minWidth: 1000,
     minHeight: 700,
     show: false,
-    backgroundColor: "#eef2f7",
+    backgroundColor: "#ffffff",
     title: "NB foto-namngivar",
     icon: APP_ICON,
     webPreferences: {
