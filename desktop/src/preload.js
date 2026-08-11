@@ -19,4 +19,13 @@ contextBridge.exposeInMainWorld("nbrDesktop", {
    * kjem til resultatet etter ei omdøyping. Gir { ok: true } eller { error }.
    */
   openPath: (target) => ipcRenderer.invoke("open-path", { target }),
+
+  /**
+   * Framdrifta i oppgåvelinja, som ein del mellom 0 og 1. -1 fjernar henne. Lèt brukaren
+   * følgje med på ei lang OCR-køyring utan å ha appen framme.
+   */
+  setProgress: (fraction) => ipcRenderer.send("set-progress", { fraction }),
+
+  /** Varsel når ein lang jobb er ferdig. Blir berre vist om vindauget ikkje er framme. */
+  notify: (title, body) => ipcRenderer.send("notify", { title, body }),
 });

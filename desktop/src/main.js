@@ -2,7 +2,7 @@
 // ABOUTME: Backenden bind seg til 127.0.0.1 på ein ledig port, og blir alltid avslutta saman med appen.
 "use strict";
 
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -382,6 +382,36 @@ function registerOpenHandler() {
   });
 }
 
+/**
+ * Ei OCR-køyring over eit heilt arkivuttrekk kan ta timar. Då skal brukaren kunne gjere anna
+ * arbeid og likevel sjå kor langt det har komme, og bli varsla når det er gjort.
+ */
+function registerProgressHandlers() {
+  ipcMain.on("set-progress", (event, { fraction } = {}) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    win?.setProgressBar(typeof fraction === "number" ? fraction : -1);
+  });
+
+  ipcMain.on("notify", (event, { title, body } = {}) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    // Står vindauget framme, ser brukaren alt resultatet, og eit varsel er berre støy.
+    if (!win || win.isFocused()) return;
+
+    win.flashFrame(true);
+    if (!Notification.isSupported()) return;
+    const varsel = new Notification({
+      title: String(title || ""),
+      body: String(body || ""),
+      icon: APP_ICON,
+    });
+    varsel.on("click", () => {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    });
+    varsel.show();
+  });
+}
+
 function createSplash() {
   splashWindow = new BrowserWindow({
     width: 460,
@@ -417,6 +447,9 @@ function createMainWindow(url) {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+
+  // Blinkinga frå eit ferdigvarsel har gjort jobben sin når brukaren kjem tilbake.
+  mainWindow.on("focus", () => mainWindow.flashFrame(false));
 
   // Alt utanfor den lokale backenden skal opnast i systemnettlesaren, ikkje i appvindauget.
   mainWindow.webContents.setWindowOpenHandler(({ url: target }) => {
@@ -533,6 +566,7 @@ async function boot() {
   buildMenu();
   registerPickHandler();
   registerOpenHandler();
+  registerProgressHandlers();
   createSplash();
 
   try {

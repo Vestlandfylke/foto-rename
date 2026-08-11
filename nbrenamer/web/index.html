@@ -488,6 +488,39 @@ $('dirChoose').onclick = () => {
   $('dirDlg').close();
 };
 
+// ---- Framdrift på lange jobbar ----
+// Ei OCR-køyring over eit heilt arkivuttrekk kan ta timar. Utan tid att er ho umogleg å
+// planleggje rundt, og utan framdrift i oppgåvelinja må brukaren ha appen framme for å følgje
+// med. Begge delar handlar om at han skal kunne gjere anna arbeid i mellomtida.
+function formatDuration(sekund) {
+  const s = Math.max(0, Math.round(sekund));
+  if (s < 60) return `${s} sek`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} t ${m % 60} min`;
+}
+
+// Snittet så langt er godt nok her: bileta er like store, og estimatet blir betre for kvart
+// eit. Under dei fyrste få er talet så ustabilt at det er betre å ikkje vise noko.
+function timeLeft(j) {
+  if (j.state !== 'running' || !j.total || j.processed < 3) return '';
+  const igjen = (j.elapsed / j.processed) * (j.total - j.processed);
+  return `ca. ${formatDuration(igjen)} att`;
+}
+
+function progressLine(j) {
+  const deler = [`${j.processed} / ${j.total}`, `gått ${formatDuration(j.elapsed)}`];
+  const att = timeLeft(j);
+  if (att) deler.push(att);
+  return deler;
+}
+
+// Oppgåvelinja og varselet finst berre i skrivebordsappen. I nettlesaren viser fana framdrifta.
+function reportProgress(j, pct) {
+  document.title = j.state === 'running' ? `${pct} % · NB foto-namngivar` : 'NB foto-namngivar';
+  window.nbrDesktop?.setProgress(j.state === 'running' && j.total ? j.processed / j.total : -1);
+}
+
 // ---- Discover ----
 let pollTimer = null;
 function poll(onState) {
@@ -521,14 +554,20 @@ function updateDiscover(j) {
   const pct = j.total ? Math.round(100 * j.processed / j.total) : 0;
   $('d_bar').style.width = pct + '%';
   $('d_cur').textContent = j.current ? ('Les: ' + j.current) : (j.message || '');
-  $('d_pct').textContent = j.processed + ' / ' + j.total + ' · ' + j.elapsed + 's · ' + (j.device ? j.device.toUpperCase() : '');
+  const deler = progressLine(j);
+  if (j.device) deler.push(j.device.toUpperCase());
+  $('d_pct').textContent = deler.join('  ·  ');
   $('d_counts').innerHTML = Object.entries(j.counts).map(([k,v]) => `<span class="pill">${statusLabel(k)}: <b>${v}</b></span>`).join('');
+  reportProgress(j, pct);
   if (j.state !== 'running') {
     $('d_start').disabled = false;
     $('d_msg').className = 'msg' + (j.state === 'error' ? ' error' : '');
     $('d_msg').textContent = (j.state === 'done' ? 'Ferdig. ' : j.state === 'cancelled' ? 'Avbroten. ' : 'Feil: ') + (j.message || '');
     if (j.state === 'done') { $('r_report').value = $('d_report').value; $('e_report').value = $('d_report').value; }
     $('d_goto2').style.display = (j.state === 'done') ? 'inline-block' : 'none';
+    if (j.state === 'done') {
+      window.nbrDesktop?.notify('Lesinga er ferdig', `${j.processed} bilete lesne på ${formatDuration(j.elapsed)}. Klar for gjennomgang.`);
+    }
   }
 }
 
@@ -908,7 +947,8 @@ function updateExecute(j) {
   const pct = j.total ? Math.round(100 * j.processed / j.total) : 0;
   $('e_bar').style.width = pct + '%';
   $('e_cur').textContent = j.current || j.message || '';
-  $('e_pct').textContent = j.processed + ' / ' + j.total + ' · ' + j.elapsed + 's';
+  $('e_pct').textContent = progressLine(j).join('  ·  ');
+  reportProgress(j, pct);
   if (j.state !== 'running') {
     // Hald knappen grå når omdøypinga er ferdig. Ved feil/avbrot kan ein prøve på nytt.
     $('e_start').disabled = (j.state === 'done');
@@ -920,6 +960,9 @@ function updateExecute(j) {
     // Vegen til resultatet finst berre i skrivebordsappen; i nettlesaren kan ikkje ei side
     // opne Utforskar, og då står stien i feltet over.
     $('e_done').style.display = (j.state === 'done' && window.nbrDesktop) ? 'flex' : 'none';
+    if (j.state === 'done') {
+      window.nbrDesktop?.notify('Omdøypinga er ferdig', `${r['omdøypt']||0} bilete fekk nytt namn på ${formatDuration(j.elapsed)}.`);
+    }
   }
 }
 
