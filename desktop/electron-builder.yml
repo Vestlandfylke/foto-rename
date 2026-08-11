@@ -8,15 +8,15 @@ directories:
   output: dist
   buildResources: build
 
-# Oppdateringar blir henta frå GitHub-releases. electron-builder legg ved latest.yml og
-# ei .blockmap-fil, som gjer at appen berre lastar ned dei delane av installasjonsfila
-# som faktisk er endra. releaseType: draft gjer at ingen får oppdateringa før eit menneske
-# har trykt "Publish release" i GitHub.
+# Oppdateringar blir henta frå GitHub-releases. Denne blokka fortel appen kvar han skal
+# leite, og gjer at bygget lagar latest.yml og ei .blockmap-fil, som lèt appen berre laste
+# ned dei delane av installasjonsfila som faktisk er endra. Sjølve opplastinga skjer i
+# .github/workflows/release.yml, ikkje her: electron-builder si eiga publisering lastar opp
+# parallelt og kan avslutte grønt med filer som manglar.
 publish:
   provider: github
   owner: Vestlandfylke
   repo: foto-rename
-  releaseType: draft
 
 files:
   - src/**/*

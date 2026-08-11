@@ -46,14 +46,53 @@ jobs:
         run: .\scripts\build-runtime.ps1
 
       - name: Byggje installasjonsfil
-        if: github.ref_type != 'tag'
         run: npm run dist
 
-      - name: Byggje og publisere release-utkast
+      # electron-builder si eiga GitHub-publisering lastar opp filene parallelt og avsluttar
+      # med kode 0 sjølv når ei av dei aldri kom fram, så releasen blir halv utan at jobben
+      # blir raud. Difor byggjer me utan publisering og legg filene ved sjølve, i eitt steg.
+      - name: Leggje filene på release-utkastet
         if: github.ref_type == 'tag'
-        run: npm run publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Utan denne ville "gh release view" på ein release som ikkje finst enno stoppa
+          # steget i staden for å gå til create-greina, sidan pwsh 7.3 gjer exit-kodar frå
+          # eksterne program om til terminerande feil når ErrorActionPreference er Stop.
+          $PSNativeCommandUseErrorActionPreference = $false
+          $tag = "${{ github.ref_name }}"
+          $versjon = (Get-Content package.json | ConvertFrom-Json).version
+          $exe = "dist\NB-foto-namngivar-Setup-$versjon.exe"
+          $filer = @($exe, "$exe.blockmap", "dist\latest.yml")
+          foreach ($fil in $filer) {
+            if (-not (Test-Path $fil)) { throw "Bygget mangla $fil." }
+          }
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $filer --clobber
+          } else {
+            gh release create $tag --draft --title $tag --generate-notes $filer
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Klarte ikkje leggje filene på releasen." }
+
+      # Utan denne sjekken kan ein manglande fil passere som ei vellukka køyring, og
+      # feilen dukkar fyrst opp hos brukaren som ikkje får oppdatering.
+      - name: Sjekk at releasen har alle filene
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $versjon = (Get-Content package.json | ConvertFrom-Json).version
+          $venta = @(
+            "NB-foto-namngivar-Setup-$versjon.exe",
+            "NB-foto-namngivar-Setup-$versjon.exe.blockmap",
+            "latest.yml"
+          )
+          $liggjer = (gh release view $tag --json assets | ConvertFrom-Json).assets.name
+          $manglar = $venta | Where-Object { $liggjer -notcontains $_ }
+          if ($manglar) { throw "Releasen manglar: $($manglar -join ', ')" }
+          Write-Host "Releasen har $($liggjer -join ', ')"
 
       # Ved manuell køyring: last ned installasjonsfila frå denne sida for å teste henne.
       - name: Ta vare på installasjonsfila

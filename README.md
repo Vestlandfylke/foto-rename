@@ -118,7 +118,7 @@ git tag v1.0.1
 git push origin main --tags
 ```
 
-3. GitHub Actions byggjer Python-runtime og installasjonsfila, og legg alt som eit **release-utkast**. Byggjejobben stoppar med ein tydeleg feil dersom taggen og `package.json` ikkje har same versjon.
+3. GitHub Actions byggjer Python-runtime og installasjonsfila, og legg alt som eit **release-utkast**. Byggjejobben stoppar med ein tydeleg feil dersom taggen og `package.json` ikkje har same versjon, og til slutt les han over releasen og feilar dersom installasjonsfila, `.blockmap` eller `latest.yml` ikkje kom fram.
 4. Gå til Releases på GitHub, skriv kva som er nytt, og trykk **Publish release**. Fyrst då får brukarane varsel. Så lenge releasen er eit utkast, ser ingen han.
 
 Vil du testbyggje utan å publisere, køyr arbeidsflyten **Release** manuelt i Actions-fanen. Då blir installasjonsfila lagt ved som nedlastbar fil på byggjesida i staden for å bli publisert.
