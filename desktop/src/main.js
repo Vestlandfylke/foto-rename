@@ -365,10 +365,13 @@ function createMainWindow(url) {
     // Etter at UI-et er synleg, så dialogane ikkje forseinkar oppstarten.
     runStartupTasks().catch((error) => backendLog?.write(`=== oppstartsjobb feila: ${error} ===\n`));
   });
-  mainWindow.webContents.once("did-fail-load", (_event, code, description) => {
+  // Berre feil på sjølve hovudsida er kritiske. Ein underressurs som ikkje lastar skal ikkje
+  // drepe appen, og ERR_ABORTED (-3) kjem av heilt vanlege avbrotne navigeringar.
+  mainWindow.webContents.on("did-fail-load", (_event, code, description, failedUrl, isMainFrame) => {
+    if (!isMainFrame || code === -3) return;
     fatal(
       "Klarte ikkje laste grensesnittet",
-      `Backenden svarte ikkje på ${url} (${description}, kode ${code}).\n\nDetaljar i loggen:\n${logPath}`
+      `Backenden svarte ikkje på ${failedUrl} (${description}, kode ${code}).\n\nDetaljar i loggen:\n${logPath}`
     );
   });
   mainWindow.once("closed", () => {

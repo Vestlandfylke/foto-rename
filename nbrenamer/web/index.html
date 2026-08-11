@@ -8,7 +8,10 @@
 <link rel="icon" href="favicon.ico" sizes="any" />
 <title>NB foto-namngivar</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  /* Ingen web-fontar: UI-et skal rendere utan nettilgang. Eit blokkerande @import til
+     fonts.googleapis.com held sida upåmåla heilt til førespurnaden gir opp, og på maskiner
+     der utgåande trafikk dit er stengd tek det fem minutt. Inter blir brukt om han er
+     installert lokalt, elles Segoe UI. */
   :root {
     --bg: #eef2f7; --panel: #ffffff; --panel2: #f4f7fb; --border: #e2e8f0;
     --text: #0f1b2d; --muted: #5b6b82; --brand: #0A3258; --accent: #0A3258; --ok: #15803d;
