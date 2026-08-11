@@ -364,6 +364,24 @@ function registerPickHandler() {
   });
 }
 
+/**
+ * Opnar ut-mappa eller rapporten etter ei køyring. Ei mappe blir opna i Utforskar; ei fil blir
+ * vist i mappa si i staden for å bli starta, slik at appen aldri køyrer noko for brukaren.
+ */
+function registerOpenHandler() {
+  ipcMain.handle("open-path", async (event, { target } = {}) => {
+    const wanted = typeof target === "string" ? target.trim() : "";
+    if (!wanted || !fs.existsSync(wanted)) return { error: "Fann ikkje stien" };
+
+    if (fs.statSync(wanted).isDirectory()) {
+      const error = await shell.openPath(wanted);
+      return error ? { error } : { ok: true };
+    }
+    shell.showItemInFolder(wanted);
+    return { ok: true };
+  });
+}
+
 function createSplash() {
   splashWindow = new BrowserWindow({
     width: 460,
@@ -514,6 +532,7 @@ async function boot() {
   openLog();
   buildMenu();
   registerPickHandler();
+  registerOpenHandler();
   createSplash();
 
   try {

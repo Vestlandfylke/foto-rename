@@ -71,6 +71,15 @@ def _place_file(src: Path, dest: Path, move: bool, overwrite: bool) -> str:
     return "ok"
 
 
+def will_be_renamed(row: dict) -> bool:
+    """
+    Sant når rada får nytt namn i ut-mappa. Alt anna hamnar i _manuell med originalnamnet.
+    Same regel blir brukt av oppsummeringa som blir vist før køyringa, slik at tala brukaren
+    stadfestar er dei same som køyringa faktisk gjer.
+    """
+    return row.get("status") == STATUS_OK and bool(row.get("new_basename"))
+
+
 def execute_rows(
     rows: list[dict],
     output_dir: Path,
@@ -91,7 +100,7 @@ def execute_rows(
         tiff = Path(row["matched_tiff"]) if row.get("matched_tiff") else None
         status = row["status"]
 
-        if status == STATUS_OK and row.get("new_basename"):
+        if will_be_renamed(row):
             target_dir = output_dir / row["year"] if (organize_by_year and row.get("year")) else output_dir
             base = row["new_basename"]
             res = _place_file(jpg, target_dir / (base + jpg.suffix.lower()), move, overwrite)

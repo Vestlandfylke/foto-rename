@@ -109,6 +109,11 @@
   .msg.error { color: var(--err); }
   .msg.warn { color: var(--warn); }
   input.bad { border-color: var(--err); box-shadow: 0 0 0 3px rgba(220, 38, 38, .12); }
+  .confirm { padding: 16px; width: min(580px, 90vw); }
+  .confirm ul { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.75; }
+  .confirm code { background: var(--panel2); border-radius: 4px; padding: 1px 5px; }
+  .confirm-actions { display: flex; justify-content: flex-end; margin-top: 18px; }
+  .result-actions { display: flex; gap: 10px; margin-top: 12px; }
   .walk-warn:empty { display: none; }
   .walk-warn { color: var(--err); }
   dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); max-width: 90vw; max-height: 90vh; padding: 0; }
@@ -264,8 +269,21 @@
       <div class="progress-meta"><span id="e_cur"></span><span id="e_pct"></span></div>
     </div>
     <div class="msg" id="e_msg"></div>
+    <div class="result-actions" id="e_done" style="display:none">
+      <button class="secondary" id="e_openOut">Opne mappa med bileta</button>
+      <button class="secondary" id="e_openReport">Vis rapporten</button>
+    </div>
   </section>
 </main>
+
+<dialog id="confirmDlg">
+  <div class="dlg-head"><span>Klar til å køyre omdøypinga?</span><button class="secondary" id="confirmNo">Avbryt</button></div>
+  <div class="confirm">
+    <ul id="confirmList"></ul>
+    <div class="msg warn" id="confirmWarn"></div>
+    <div class="confirm-actions"><button id="confirmYes">Ja, start omdøypinga</button></div>
+  </div>
+</dialog>
 
 <dialog id="walkDlg">
   <div class="dlg-head"><span id="walkPos"></span><button class="secondary" id="walkClose">Lukk</button></div>
@@ -824,8 +842,60 @@ async function saveReview() {
 $('r_save').onclick = saveReview;
 
 // ---- Execute ----
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+// Eitt klikk skriv tusenvis av filer til disk. Difor blir omfanget lagt fram fyrst, med tal
+// rekna av backenden etter same regel som køyringa sjølv brukar.
+async function confirmExecute() {
+  const s = await api('/api/report/summary?path=' + encodeURIComponent($('e_report').value.trim()));
+  const mappe = esc($('e_output').value.trim());
+  const punkt = [
+    `<b>${s.renamed}</b> bilete får nytt namn og blir lagde i <code>${mappe}</code>` +
+      ($('e_year').checked ? ', sortert i mapper per år.' : '.'),
+  ];
+  if (s.manual) {
+    punkt.push(`<b>${s.manual}</b> bilete hamnar i <code>_manuell\\</code> med originalnamnet.`);
+  }
+  punkt.push('Originalane blir <b>kopierte</b>, ikkje flytta.');
+  punkt.push($('e_over').checked
+    ? 'Filer som alt finst i mappa <b>blir overskrivne</b>.'
+    : 'Filer som alt finst i mappa blir <b>ikkje</b> rørte, men talde som konfliktar.');
+  $('confirmList').innerHTML = punkt.map(p => `<li>${p}</li>`).join('');
+  const dubletter = s.duplicates.length;
+  $('confirmWarn').textContent = dubletter
+    ? (dubletter === 1
+        ? `Foto-ID-en ${s.duplicates[0]} er brukt på fleire bilete, og dei vil kollidere. `
+        : `${dubletter} Foto-ID-ar er brukte på fleire bilete, til dømes ${s.duplicates[0]}, og dei vil kollidere. `) +
+      'Gå tilbake til steg 2 om du vil rette det fyrst.'
+    : '';
+  return askConfirm();
+}
+
+function askConfirm() {
+  return new Promise((resolve) => {
+    const dlg = $('confirmDlg');
+    $('confirmYes').onclick = () => { dlg.close(); resolve(true); };
+    $('confirmNo').onclick = () => dlg.close();
+    // Dekkjer både Avbryt-knappen og Esc. Eit svar som alt er gitt står ved lag.
+    dlg.addEventListener('close', () => resolve(false), { once: true });
+    dlg.showModal();
+  });
+}
+
 $('e_start').onclick = async () => {
   $('e_msg').className = 'msg'; $('e_msg').textContent = '';
+  $('e_done').style.display = 'none';
+  if (!$('e_output').value.trim()) {
+    $('e_msg').className = 'msg error';
+    $('e_msg').textContent = 'Vel ei mappe der dei omdøypte bileta skal leggast.';
+    return;
+  }
+  try {
+    if (!await confirmExecute()) return;
+  } catch (e) {
+    $('e_msg').className = 'msg error'; $('e_msg').textContent = e.message;
+    return;
+  }
   const body = { report: $('e_report').value.trim(), output_dir: $('e_output').value.trim(), move: false, overwrite: $('e_over').checked, organize_by_year: $('e_year').checked };
   try {
     await api('/api/execute/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
@@ -847,8 +917,18 @@ function updateExecute(j) {
     $('e_msg').textContent = j.state === 'done'
       ? `Ferdig. Omdøypt: ${r['omdøypt']||0}, manuell: ${r['manuell']||0}, konfliktar: ${r['konflikt']||0}.`
       : (j.state === 'cancelled' ? 'Avbroten.' : 'Feil: ' + (j.message||''));
+    // Vegen til resultatet finst berre i skrivebordsappen; i nettlesaren kan ikkje ei side
+    // opne Utforskar, og då står stien i feltet over.
+    $('e_done').style.display = (j.state === 'done' && window.nbrDesktop) ? 'flex' : 'none';
   }
 }
+
+async function openInExplorer(sti) {
+  const svar = await window.nbrDesktop.openPath(sti);
+  if (svar?.error) { $('e_msg').className = 'msg error'; $('e_msg').textContent = `${svar.error}: ${sti}`; }
+}
+$('e_openOut').onclick = () => openInExplorer($('e_output').value.trim());
+$('e_openReport').onclick = () => openInExplorer($('e_report').value.trim());
 
 // Gjer omdøypingsknappen aktiv igjen om brukaren endrar noko for ei ny køyring.
 ['e_report', 'e_output', 'e_year', 'e_over'].forEach(id =>

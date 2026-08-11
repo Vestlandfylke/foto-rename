@@ -13,4 +13,10 @@ contextBridge.exposeInMainWorld("nbrDesktop", {
    * er stien feltet har i dag. Gir { path } eller { cancelled: true }.
    */
   pickPath: (mode, initial) => ipcRenderer.invoke("pick-path", { mode, initial }),
+
+  /**
+   * Opnar ei mappe eller ei fil i Utforskar eller i standardprogrammet, slik at brukaren
+   * kjem til resultatet etter ei omdøyping. Gir { ok: true } eller { error }.
+   */
+  openPath: (target) => ipcRenderer.invoke("open-path", { target }),
 });

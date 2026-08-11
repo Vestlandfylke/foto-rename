@@ -340,6 +340,25 @@ def api_report(
     }
 
 
+@app.get("/api/report/summary")
+def api_report_summary(path: str):
+    """
+    Kva ei omdøyping av denne rapporten vil gjere. Blir vist til stadfesting før steg 3, der
+    éin knapp elles ville skrive tusenvis av filer utan at brukaren såg omfanget fyrst.
+    """
+    p = Path(path)
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="Rapporten finst ikkje")
+    rows = read_rows(p)
+    renamed = sum(1 for r in rows if pipeline.will_be_renamed(r))
+    return {
+        "total": len(rows),
+        "renamed": renamed,
+        "manual": len(rows) - renamed,
+        "duplicates": _duplicate_ids(rows),
+    }
+
+
 @app.get("/api/statuses")
 def api_statuses():
     """Kodane, dei korte namna og forklaringane, så UI-et ikkje duplisera ordlyden."""
