@@ -106,20 +106,50 @@ Slik opplever brukaren det:
 
 Appen lastar berre ned dei delane av installasjonsfila som er endra, fordi electron-builder lagar ei `.blockmap`-fil ved sida av `.exe`-en. GPU-pakkane ligg utanfor programmappa og blir ikkje rørte av ei oppdatering.
 
-Slik legg du ut ein ny versjon:
+### Legge ut ein ny versjon
 
-1. Sett nytt versjonsnummer i `desktop\package.json`.
-2. Commit, og lag ein tag med same nummer og `v` framføre:
+Ein release er ferdig fyrst når ein brukar med den førre versjonen faktisk får varsel om oppdatering. Gå gjennom alle stega under, og hopp særleg ikkje over sjekken i steg 4 og publiseringa i steg 5.
+
+**1. Sett nytt versjonsnummer.** Køyr `npm version` inne i `desktop`, så blir både `package.json` og `package-lock.json` oppdaterte. Bygget les versjonen frå `package.json`. `package-lock.json` har han òg, to stader, og står dei ulikt, blir lockfila skriven om av neste `npm install`, midt i ei heilt anna endring.
+
+```powershell
+cd d:\foto-rename\desktop
+npm version 1.1.1 --no-git-tag-version
+cd ..
+```
+
+**2. Commit og tagg.** Taggen skal ha same nummer som `package.json`, med `v` framføre. Byggjejobben stoppar med ein tydeleg feil om dei ikkje stemmer, for elles ville brukarane fått tilbod om ein versjon som ikkje finst.
 
 ```powershell
 git add -A
-git commit -m "Versjon 1.0.1"
-git tag v1.0.1
+git commit -m "Versjon 1.1.1"
+git tag v1.1.1
 git push origin main --tags
 ```
 
-3. GitHub Actions byggjer Python-runtime og installasjonsfila, og legg alt som eit **release-utkast**. Byggjejobben stoppar med ein tydeleg feil dersom taggen og `package.json` ikkje har same versjon, og til slutt les han over releasen og feilar dersom installasjonsfila, `.blockmap` eller `latest.yml` ikkje kom fram.
-4. Gå til Releases på GitHub, skriv kva som er nytt, og trykk **Publish release**. Fyrst då får brukarane varsel. Så lenge releasen er eit utkast, ser ingen han.
+**3. Følg med på bygget.** GitHub Actions byggjer Python-runtime og installasjonsfila, lastar filene opp med `gh` og lagar eit **release-utkast**.
+
+```powershell
+gh run watch
+```
+
+**4. Sjekk at releasen er heil.** Det siste steget i jobben les over releasen og feilar dersom installasjonsfila, `.blockmap` eller `latest.yml` manglar, så ei grøn køyring er i seg sjølv eit godt teikn. Sjå likevel over sjølv:
+
+```powershell
+gh release view v1.1.1
+```
+
+Du skal sjå tre filer: `NB-foto-namngivar-Setup-1.1.1.exe` på rundt 230 MiB, `.exe.blockmap` og `latest.yml`. Utan `latest.yml` finst det ikkje noko oppdateringsfeed, og appen svarar med feilmelding når nokon sjekkar etter oppdateringar.
+
+**5. Publiser.** Så lenge releasen er eit utkast, ser korkje brukarane eller `electron-updater` han. Skriv kva som er nytt på Releases-sida og trykk **Publish release**, eller gjer det frå terminalen:
+
+```powershell
+gh release edit v1.1.1 --draft=false
+```
+
+**6. Stadfest at oppdateringa kjem fram.** Start appen på ei maskin som har den førre versjonen installert. Varselet skal kome av seg sjølv kort tid etter at vindauget er synleg, og **Hjelp → Sjekk etter oppdateringar ...** skal seie det same. Går det gale, skriv `electron-updater` kva URL han prøvde og kva han fekk tilbake i `%APPDATA%\NB foto-namngivar\logs\main.log`.
+
+Gjekk noko gale undervegs, lag ein ny lapp-versjon i staden for å flytte ein tag som alt er pusha. Slett den mislukka releasen med `gh release delete v1.1.1 --yes` (taggen blir liggjande), og gå vidare til neste nummer.
 
 Vil du testbyggje utan å publisere, køyr arbeidsflyten **Release** manuelt i Actions-fanen. Då blir installasjonsfila lagt ved som nedlastbar fil på byggjesida i staden for å bli publisert.
 

@@ -56,9 +56,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Utan denne ville "gh release view" på ein release som ikkje finst enno stoppa
-          # steget i staden for å gå til create-greina, sidan pwsh 7.3 gjer exit-kodar frå
-          # eksterne program om til terminerande feil når ErrorActionPreference er Stop.
+          # Steget nyttar exit-koden frå "gh release view" som eit svar, ikkje som ein feil:
+          # ein release som ikkje finst enno er det normale. Denne lina slår difor eksplisitt
+          # av at exit-kodar frå eksterne program blir terminerande feil, sidan GitHub set
+          # ErrorActionPreference til Stop og standardverdien her kan endre seg mellom
+          # pwsh-versjonar. Kvart kall blir sjekka med $LASTEXITCODE i staden.
           $PSNativeCommandUseErrorActionPreference = $false
           $tag = "${{ github.ref_name }}"
           $versjon = (Get-Content package.json | ConvertFrom-Json).version
