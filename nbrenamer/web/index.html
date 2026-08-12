@@ -346,6 +346,7 @@
     <div class="progress" id="e_prog" style="display:none">
       <div class="bar"><div id="e_bar"></div></div>
       <div class="progress-meta"><span id="e_cur"></span><span id="e_pct"></span></div>
+      <button class="secondary" id="e_cancel" style="margin-top:12px">Avbryt</button>
     </div>
     <div class="msg" id="e_msg"></div>
     <div class="result-actions" id="e_done" style="display:none">
@@ -1073,6 +1074,9 @@ $('e_start').onclick = async () => {
     poll(updateExecute);
   } catch (e) { $('e_msg').className = 'msg error'; $('e_msg').textContent = e.message; }
 };
+// Kopieringa kan vere fleire terabyte. Utan denne måtte brukaren drepe appen for å stoppe
+// ei køyring som var starta på feil mappe. Jobben stoppar mellom to filer, ikkje midt i ei.
+$('e_cancel').onclick = () => api('/api/cancel', { method: 'POST' });
 
 function updateExecute(j) {
   const pct = j.total ? Math.round(100 * j.processed / j.total) : 0;
@@ -1085,13 +1089,21 @@ function updateExecute(j) {
     // Hald knappen grå når omdøypinga er ferdig. Ved feil/avbrot kan ein prøve på nytt.
     $('e_start').disabled = (j.state === 'done');
     const r = j.result || {};
+    // Konfliktar og feil blir berre nemnde når dei finst, for då er dei noko brukaren må
+    // gjere noko med. Kva filer det gjeld står i uidentifiserte.csv i _manuell-mappa.
+    const deler = [`Omdøypt: ${r['omdøypt']||0}`, `manuell: ${r['manuell']||0}`];
+    if (r['konflikt']) deler.push(`konfliktar: ${r['konflikt']}`);
+    if (r['feil']) deler.push(`feil: ${r['feil']}`);
+    const oppsummering = deler.join(', ') + '.'
+      + ((r['konflikt'] || r['feil']) ? ' Sjå uidentifiserte.csv i _manuell for kva som ikkje kom med.' : '');
     $('e_msg').className = 'msg' + (j.state === 'error' ? ' error' : '');
     $('e_msg').textContent = j.state === 'done'
-      ? `Ferdig. Omdøypt: ${r['omdøypt']||0}, manuell: ${r['manuell']||0}, konfliktar: ${r['konflikt']||0}.`
-      : (j.state === 'cancelled' ? 'Avbroten.' : 'Feil: ' + (j.message||''));
+      ? `Ferdig. ${oppsummering}`
+      : (j.state === 'cancelled' ? `Avbroten etter ${j.processed} av ${j.total}. ${oppsummering}` : 'Feil: ' + (j.message||''));
     // Vegen til resultatet finst berre i skrivebordsappen; i nettlesaren kan ikkje ei side
-    // opne Utforskar, og då står stien i feltet over.
-    $('e_done').style.display = (j.state === 'done' && window.nbrDesktop) ? 'flex' : 'none';
+    // opne Utforskar, og då står stien i feltet over. Ei avbroten køyring har òg laga filer,
+    // så mappa er verdt å opne då.
+    $('e_done').style.display = ((j.state === 'done' || j.state === 'cancelled') && window.nbrDesktop) ? 'flex' : 'none';
     setStatusState(j.state === 'done' ? `Omdøypinga er ferdig · ${r['omdøypt']||0} bilete på ${formatDuration(j.elapsed)}`
       : j.state === 'cancelled' ? 'Omdøypinga vart avbroten' : 'Omdøypinga feila');
     if (j.state === 'done') {

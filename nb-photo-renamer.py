@@ -118,6 +118,17 @@ def cmd_execute(args):
         print(f"Rapportfila finst ikkje: {report}", file=sys.stderr)
         return 1
     rows = read_rows(report)
+    # Ei flytting på same disk treng ikkje ekstra plass, difor berre ved kopiering.
+    if not args.move:
+        shortfall = pipeline.missing_space(rows, Path(args.output_dir))
+        if shortfall:
+            needed, free = shortfall
+            print(
+                f"Ikkje nok plass i {args.output_dir}. Kopien treng "
+                f"{pipeline.human_bytes(needed)}, men berre {pipeline.human_bytes(free)} er ledig.",
+                file=sys.stderr,
+            )
+            return 1
     stats = pipeline.execute_rows(
         rows,
         Path(args.output_dir),
@@ -129,6 +140,7 @@ def cmd_execute(args):
     print(f"Omdøypt (jpg+tif):  {stats['omdøypt']}")
     print(f"Til manuell mappe:  {stats['manuell']}")
     print(f"Konfliktar:         {stats['konflikt']}")
+    print(f"Feil:               {stats['feil']}")
     print(f"Utdata i:           {args.output_dir}")
     if stats.get("manual_list"):
         print(f"Liste over uidentifiserte: {stats['manual_list']}")

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import csv
 import io
 import os
 import string
@@ -38,6 +37,7 @@ from .report import (
     read_processed,
     read_rows,
     write_manual_list,
+    write_rows,
 )
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -208,11 +208,24 @@ def _run_execute(req: ExecuteReq):
         rows = read_rows(Path(req.report))
         with _job_lock:
             _job.total = len(rows)
+            _job.message = "Sjekkar at det er plass nok ..."
+
+        # Ei flytting på same disk treng ikkje ekstra plass, så då hoppar me over sjekken.
+        if not req.move:
+            shortfall = pipeline.missing_space(rows, Path(req.output_dir))
+            if shortfall:
+                needed, free = shortfall
+                _finish_job(
+                    "error",
+                    f"Ikkje nok plass i {req.output_dir}. Kopien treng {pipeline.human_bytes(needed)}, "
+                    f"men berre {pipeline.human_bytes(free)} er ledig. Frigjer plass eller vel ei anna mappe.",
+                )
+                return
 
         def on_progress(idx, total, row):
             with _job_lock:
                 _job.processed = idx
-                _job.current = Path(row["original_jpg"]).name
+                _job.current = Path(row.get("original_jpg", "")).name
 
         stats = pipeline.execute_rows(
             rows,
@@ -221,8 +234,10 @@ def _run_execute(req: ExecuteReq):
             overwrite=req.overwrite,
             organize_by_year=req.organize_by_year,
             on_progress=on_progress,
+            should_stop=_cancel.is_set,
         )
-        _finish_job("done", f"Utdata i {req.output_dir}", result=stats)
+        state = "cancelled" if _cancel.is_set() else "done"
+        _finish_job(state, f"Utdata i {req.output_dir}", result=stats)
     except Exception as e:  # noqa: BLE001
         _finish_job("error", f"{type(e).__name__}: {e}")
 
@@ -373,6 +388,13 @@ def api_report_save(req: SaveReq):
     p = Path(req.report)
     if not p.is_file():
         raise HTTPException(status_code=404, detail="Rapporten finst ikkje")
+    # Lesejobben skriv rader til den same fila etter kvart. Skreiv me over henne samstundes,
+    # ville dei to skrivingane trakka på kvarandre og rapporten blitt øydelagd.
+    if _busy():
+        raise HTTPException(
+            status_code=409,
+            detail="Ein jobb køyrer og skriv til rapporten. Vent til han er ferdig før du lagrar.",
+        )
     rows = read_rows(p)
     edits = {e.original_jpg: e for e in req.rows}
     for r in rows:
@@ -387,10 +409,7 @@ def api_report_save(req: SaveReq):
             r["new_basename"] = e.new_basename
         elif e.foto_id is not None:
             r["new_basename"] = e.foto_id
-    with p.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=core.CSV_FIELDS)
-        writer.writeheader()
-        writer.writerows(rows)
+    write_rows(p, rows)
     # Duplikatlista blir rekna på nytt her, slik at varselet i UI-et speglar fila som no ligg
     # på disk i staden for tilstanden før lagringa.
     return {"ok": True, "updated": len(edits), "duplicates": _duplicate_ids(rows)}
