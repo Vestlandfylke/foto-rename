@@ -19,8 +19,9 @@ rapport/
 _research/
 *.zip
 
-# Interne notat. Blir haldne lokalt, ikkje i det offentlege repoet.
+# Interne notat og verktøyoppsett. Blir haldne lokalt, ikkje i det offentlege repoet.
 docs/
+.cursor/
 
 # Loggar
 *.log
