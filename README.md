@@ -63,7 +63,7 @@ Grensesnittet er bygd som eit programvindauge, ikkje som ei nettside: verktøyli
 
 1. **Les og rapporter**: vel inn-mappe, eining (GPU/CPU) og innstillingar, start OCR og følg framdrifta, med tid att undervegs. Under **Avanserte val** vel du kvar ID-stripa ligg på bileta (nedst, langs venstre eller høgre kant, eller opp ned) i staden for å skrive gradar. Appen prøver retningane i tur og orden og stoppar ved fyrste treff, så kvar ekstra retning kostar berre tid på bilete som ikkje gav treff før.
 2. **Gjennomgå**: hent rapporten og rett Foto-ID/status der det trengst. Rapportar med mange bilete blir henta 200 rader om gongen, med Førre/Neste under tabellen. Skal du rette mange, vel **Treng handarbeid** i filteret og trykk **Start gjennomgang**: eitt bilete om gongen i stor visning, snudd same veg som OCR-en las det, med OCR-teksten ved sida og ID-feltet i fokus. <kbd>Enter</kbd> går vidare, <kbd>Shift</kbd>+<kbd>Enter</kbd> tilbake, <kbd>Ctrl</kbd>+<kbd>S</kbd> lagrar, <kbd>Esc</kbd> lukkar. Appen varslar om ein ID ikkje passar mønsteret, eller om same ID er brukt på fleire bilete.
-3. **Køyr omdøyping**: vel ut-mappe. Før noko blir skrive, viser appen kor mange som får nytt namn, kor mange som hamnar i `_manuell`, og eventuelle ID-kollisjonar, til stadfesting.
+3. **Køyr omdøyping**: vel ut-mappe. Før noko blir skrive, viser appen kor mange som får nytt namn, kor mange som hamnar i `_manuell`, og eventuelle ID-kollisjonar, til stadfesting. Så blir det sjekka at disken har plass til kopien, og køyringa stoppar før fyrste fila dersom han ikkje har det. Undervegs kan du avbryte, og då stoppar appen mellom to filer, aldri midt i ei. Ei fil som ikkje lèt seg kopiere stoppar ikkje resten; ho blir talt som feil og hamnar i `uidentifiserte.csv` med grunnen.
 
 ## Desktop-app (Electron)
 
@@ -112,6 +112,8 @@ Slik opplever brukaren det:
 - Er maskina utan nettilgang, skjer det ingenting og brukaren blir ikkje masa på. Menyen **Hjelp → Sjekk etter oppdateringar ...** gir beskjed om kva som gjekk gale.
 
 Appen lastar berre ned dei delane av installasjonsfila som er endra, fordi electron-builder lagar ei `.blockmap`-fil ved sida av `.exe`-en. GPU-pakkane ligg utanfor programmappa og blir ikkje rørte av ei oppdatering.
+
+Ei oppdatering køyrer installasjonsfila i stille modus, og den innebygde NSIS-malen slettar då snarvegane utan å lage dei på nytt. `desktop\build\installer.nsh` lagar difor snarvegane på skrivebordet og i startmenyen på nytt til slutt i kvar installasjon, med app-identiteten sett på begge.
 
 ### Legge ut ein ny versjon
 
@@ -219,7 +221,9 @@ Les rapporten og legg filene i utmappa:
 - `--organize-by-year` legg `ok`-filer i undermapper per årstal.
 - `--overwrite` skriv over eksisterande målfiler. Utan dette blir kollisjonar rapporterte og hoppa over.
 - `ok`-filer får nytt namn; `manuell_*`-filer blir kopierte til `_manuell\<status>\` med originalnamn.
-- I tillegg skriv `execute` ei samla liste `_manuell\uidentifiserte.csv` over alle bilete som ikkje kunne namngivast, med grunngjeving og kva mappe dei blei kopierte til.
+- I tillegg skriv `execute` ei samla liste `_manuell\uidentifiserte.csv` over alle bilete som ikkje kunne namngivast, med grunngjeving og kva mappe dei blei kopierte til. Filer som kolliderte eller ikkje lét seg kopiere står òg der, med grunnen, slik at ingenting forsvinn utan spor.
+- Ved kopiering blir det rekna ut kor mykje plass som trengst før noko blir skrive, og køyringa stoppar med ein gong dersom disken ikkje har rom. Eit skann er eit par på rundt 630 MB, så nokre tusen bilete blir fort fleire terabyte.
+- Éi fil som ikkje lèt seg kopiere, til dømes fordi ho er open i eit anna program eller er borte, blir talt som feil og hoppa over. Resten av køyringa held fram.
 
 ## Teste éi fil
 

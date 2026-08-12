@@ -584,7 +584,11 @@ async function boot() {
 if (!app.requestSingleInstanceLock()) {
   app.exit(0);
 } else {
-  app.setAppUserModelId("no.vestlandfylke.nbfotonamngivar");
+  // Windows knyter oppgåvelinja, snarvegane og varsla til denne identiteten, og hugsar ikonet
+  // ho såg først. Utviklingsappen køyrer difor under eit eige namn: elles ville Electron-ikonet
+  // frå eit utviklingsvindauge bli hengande igjen på identiteten til den installerte appen.
+  const appUserModelId = "no.vestlandfylke.nbfotonamngivar";
+  app.setAppUserModelId(app.isPackaged ? appUserModelId : `${appUserModelId}.dev`);
 
   app.on("second-instance", () => {
     const window = mainWindow ?? splashWindow;

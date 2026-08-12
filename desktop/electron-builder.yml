@@ -42,6 +42,8 @@ win:
   icon: build/icon.ico
 
 nsis:
+  # Lagar snarvegane på nytt ved oppdatering, som NSIS-malen elles hoppar over.
+  include: build/installer.nsh
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
