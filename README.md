@@ -91,7 +91,14 @@ Resultatet blir `desktop\dist\NB-foto-namngivar-Setup-<versjon>.exe`. Merk:
 - Backend-loggen finn du via menyen: **Hjelp → Opne loggmappa**.
 - Etter ei omdøyping kan du opne ut-mappa eller sjå rapporten i Utforskar. Under lange køyringar viser oppgåvelinja framdrift, og appen varslar når jobben er ferdig, men berre om vindauget ikkje står framme. Alt dette går via `src\preload.js`, så det finst berre i desktop-appen.
 - «Bla gjennom ...» brukar systemdialogen i Electron, via `src\preload.js`. Browser-appen har ikkje tilgang til han og går difor om `/api/pick` i backenden, som startar ein PowerShell-prosess per klikk. Difor finst begge vegane.
-- Ikonet er eit fotokort med lupe i Vestland-fargane. Grunnlaget er `desktop\build\icon.png` (1024x1024). Endrar du det, køyr `.venv\Scripts\python.exe desktop\scripts\make_icons.py --zoom 0.09` for å byggje `build\icon.ico` (installasjonsfil og .exe), `src\icon.png` (appvindauga) og `nbrenamer\web\favicon.ico` på nytt.
+- Ikonet er eit dokument med OCR-tekst på PMS 304 C (`#9ADBE8`), botnfargen frå profilen til Vestland fylkeskommune. Det blir teikna som flate figurar, ikkje generert som eit bilete, så fargane er nøyaktige og motivet held seg skarpt heilt ned til 16 px:
+
+```powershell
+.venv\Scripts\python.exe desktop\scripts\draw_icon.py
+.venv\Scripts\python.exe desktop\scripts\make_icons.py --preview tmp_preview.png
+```
+
+  Fyrste kommandoen skriv grunnlaget `desktop\build\icon.png` (1024x1024). Fargar og plassering ligg som konstantar øvst i `draw_icon.py`, og `--shape circle` gir ein rund variant i staden for den avrunda firkanten. Andre kommandoen lagar `build\icon.ico` (installasjonsfil og .exe), `src\icon.png` (appvindauga) og `nbrenamer\web\favicon.ico`. `--preview` er valfri og legg dei små storleikane side om side på lys og mørk botn, som er den einaste måten å sjå om ikonet toler 16 px.
 
 ### Oppdateringar
 
