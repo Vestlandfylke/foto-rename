@@ -67,7 +67,7 @@ Write-Steg "Installerer avhengnader (dette tek nokre minutt) ..."
 
 if ($Device -eq "gpu") {
     Write-Steg "Installerer torch med CUDA (stor nedlasting, ca. 3 GB) ..."
-    & $python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124 --no-warn-script-location
+    & $python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128 --no-warn-script-location
 }
 
 # 5) Legg OCR-modellane inn på førehand. Programmappa kan vere skriveverna når appen er

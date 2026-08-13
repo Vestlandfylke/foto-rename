@@ -44,10 +44,12 @@ Dette lagar `.venv` med Python 3.13 og installerer `rapidocr`, `onnxruntime`, `p
 For OCR på NVIDIA-GPU, installer torch med CUDA i venv-et:
 
 ```powershell
-& .\.venv\Scripts\python.exe -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+& .\.venv\Scripts\python.exe -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 ```
 
 Då brukar verktøyet RapidOCR sin torch-CUDA-motor (PP-OCRv5). Utan GPU, eller utan torch, fell det automatisk tilbake til CPU (ONNX Runtime). I CLI styrer du dette med `--device gpu|cpu`; i web-appen er GPU standard når ein CUDA-GPU finst.
+
+Me hentar `cu128`, altså CUDA 12.8, fordi Blackwell-korta (RTX PRO-serien og GeForce 50-serien) ikkje har kjernar i eldre CUDA-utgåver. Same hjula dekkjer dei tidlegare arkitekturane, så eit eldre kort taper ingenting på det.
 
 ## Browser-app
 
@@ -170,6 +172,7 @@ Installasjonsfila inneheld berre CPU-utgåva, slik at ho held seg lita. GPU-akse
 - Du kan alltid gjere det seinare frå menyen **Verktøy → GPU-akselerasjon ...**, som òg viser om GPU er i bruk og kva kort som blir brukt.
 - Nedlastinga (torch med CUDA, 2 til 3 GB) hamnar i `%LOCALAPPDATA%\NB foto-namngivar\gpu-packages`, altså utanfor programmappa. Det gjer at det verkar sjølv om appen er installert i Program Files, og at dei mange GB-ane ikkje blir med i ein roaming-profil.
 - Appen må startast på nytt etterpå, og tilbyr det sjølv når nedlastinga er ferdig.
+- Kva CUDA-serie pakkane kom frå står i `cuda-serie.txt` i same mappa. Byter me serie, til dømes fordi nye grafikkort krev ei nyare CUDA, ser appen at pakkane er for gamle og tilbyr å hente dei på nytt. Det er nødvendig fordi `pip install --target` lèt pakkar som alt ligg der vere i fred, så ei ny nedlasting oppå ei gammal ville ikkje endra noko.
 - Vil du heller ha alt inkludert i installasjonsfila, byggjer du runtime-en med `.\scripts\build-runtime.ps1 -Device gpu`. Då blir han rundt 5 GB utpakka.
 
 ## Arbeidsflyt i to fasar
@@ -192,7 +195,7 @@ Ved sida av rapporten blir det skrive ei eiga liste over bilete der OCR-en ikkje
 
 ### 2. Sjå over rapporten
 
-Opne `report.csv` (t.d. i Excel). Kolonnar:
+Opne `report.csv` (t.d. i Excel). Rapporten blir skriven med semikolon som skiljeteikn og med BOM, altså `utf-8-sig`, slik at Excel på norsk Windows deler kolonnane rett og viser æ, ø og å. Rapportar frå eldre køyringar, som brukte komma, blir framleis lesne. Kolonnar:
 
 | kolonne | tyding |
 | --- | --- |

@@ -158,12 +158,15 @@ async function showGpuDialog() {
     return;
   }
 
+  const outdated = gpu.isOutdated();
   const { response } = await dialog.showMessageBox(mainWindow, {
     type: "question",
     title: "GPU-akselerasjon",
-    message: "Vil du installere GPU-akselerasjon no?",
-    detail: "Nedlastinga er på 2 til 3 GB og skjer berre denne eine gongen.",
-    buttons: ["Installer", "Avbryt"],
+    message: outdated ? "GPU-pakkane må hentast på nytt." : "Vil du installere GPU-akselerasjon no?",
+    detail: outdated
+      ? "Pakkane på maskina er henta frå ei eldre CUDA-utgåve, som manglar kjernar for dei nyaste grafikkorta. Nedlastinga er på 2 til 3 GB."
+      : "Nedlastinga er på 2 til 3 GB og skjer berre denne eine gongen.",
+    buttons: [outdated ? "Hent på nytt" : "Installer", "Avbryt"],
     defaultId: 0,
     cancelId: 1,
   });
@@ -196,12 +199,16 @@ async function maybeOfferGpu() {
   if (!status || status.gpu_available) return;
   if (!(await hasNvidiaGpuOrLog())) return;
 
+  const outdated = gpu.isOutdated();
   const { response, checkboxChecked } = await dialog.showMessageBox(mainWindow, {
     type: "question",
     title: "GPU-akselerasjon",
-    message: "Maskina har eit NVIDIA-grafikkort som ikkje er i bruk.",
-    detail:
-      "GPU gjer OCR-lesinga mykje raskare. Nedlastinga er på 2 til 3 GB og skjer berre denne eine gongen.\n\nDu kan alltid gjere dette seinare frå menyen Verktøy.",
+    message: outdated
+      ? "GPU-pakkane på maskina er for gamle for grafikkortet."
+      : "Maskina har eit NVIDIA-grafikkort som ikkje er i bruk.",
+    detail: outdated
+      ? "Pakkane er henta frå ei eldre CUDA-utgåve, som manglar kjernar for dei nyaste korta. Ei ny nedlasting på 2 til 3 GB rettar det.\n\nDu kan alltid gjere dette seinare frå menyen Verktøy."
+      : "GPU gjer OCR-lesinga mykje raskare. Nedlastinga er på 2 til 3 GB og skjer berre denne eine gongen.\n\nDu kan alltid gjere dette seinare frå menyen Verktøy.",
     buttons: ["Installer no", "Ikkje no"],
     checkboxLabel: "Ikkje spør meg igjen",
     defaultId: 0,

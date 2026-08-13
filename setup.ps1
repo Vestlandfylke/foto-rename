@@ -78,7 +78,7 @@ elseif ($hasNvidia) {
 
 if ($installGpu) {
     Write-Steg "Installerer torch med CUDA (stor nedlasting) ..."
-    & $python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+    & $python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 }
 
 Write-Host ""

@@ -10,5 +10,6 @@ fastapi>=0.110.0
 uvicorn>=0.29.0
 pydantic>=2.5.0
 
-# GPU (valfritt): installer torch med CUDA separat, t.d.
-#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+# GPU (valfritt): installer torch med CUDA separat. CUDA 12.8 er nedre grense for
+# Blackwell-kort (RTX PRO-serien, GeForce 50-serien), og dekkjer eldre kort òg:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128

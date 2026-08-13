@@ -8,20 +8,44 @@ from pathlib import Path
 
 from .core import CSV_FIELDS, MANUAL_LIST_FIELDS
 
+# Rapportane blir opna i Excel, og Excel på norsk Windows deler kolonnar på semikolon.
+# Han les fila som UTF-8 berre når ho startar med eit BOM, som "utf-8-sig" legg inn;
+# utan det blir æ, ø og å feil.
+DELIMITER = ";"
+ENCODING = "utf-8-sig"
+
+
+def _open_read(report: Path):
+    """Les med "utf-8-sig", som fjernar eit BOM om det finst og elles er identisk med utf-8."""
+    return report.open("r", encoding="utf-8-sig", newline="")
+
+
+def _delimiter_in(report: Path) -> str:
+    """
+    Kva skiljeteikn fila faktisk brukar. Rapportar frå eldre køyringar har komma, og dei
+    skal framleis kunne lesast. Overskriftslinja avgjer, for feltnamna inneheld korkje
+    semikolon eller komma.
+    """
+    with _open_read(report) as f:
+        header = f.readline()
+    return DELIMITER if header.count(DELIMITER) >= header.count(",") else ","
+
 
 def read_processed(report: Path) -> set[str]:
     if not report.exists():
         return set()
+    delimiter = _delimiter_in(report)
     done = set()
-    with report.open("r", encoding="utf-8", newline="") as f:
-        for row in csv.DictReader(f):
+    with _open_read(report) as f:
+        for row in csv.DictReader(f, delimiter=delimiter):
             done.add(row["original_jpg"])
     return done
 
 
 def read_rows(report: Path) -> list[dict]:
-    with report.open("r", encoding="utf-8", newline="") as f:
-        return list(csv.DictReader(f))
+    delimiter = _delimiter_in(report)
+    with _open_read(report) as f:
+        return list(csv.DictReader(f, delimiter=delimiter))
 
 
 def write_rows(report: Path, rows: list[dict]) -> None:
@@ -32,8 +56,8 @@ def write_rows(report: Path, rows: list[dict]) -> None:
     """
     report.parent.mkdir(parents=True, exist_ok=True)
     tmp = report.with_name(report.name + ".ny")
-    with tmp.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+    with tmp.open("w", encoding=ENCODING, newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS, delimiter=DELIMITER)
         writer.writeheader()
         writer.writerows(rows)
         f.flush()
@@ -44,11 +68,17 @@ def write_rows(report: Path, rows: list[dict]) -> None:
 def open_report_writer(report: Path, resume: bool):
     """Opnar rapporten for skriving (append ved resume), returnerer (fil, writer)."""
     report.parent.mkdir(parents=True, exist_ok=True)
-    exists = report.exists()
-    mode = "a" if (resume and exists) else "w"
-    f = report.open(mode, encoding="utf-8", newline="")
-    writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
-    if mode == "w":
+    append = resume and report.exists()
+    if append:
+        # Fila har alt eit BOM, og "utf-8-sig" ville lagt inn eitt nytt midt i henne.
+        # Skiljeteiknet må vere det same som resten av fila brukar.
+        delimiter = _delimiter_in(report)
+        f = report.open("a", encoding="utf-8", newline="")
+    else:
+        delimiter = DELIMITER
+        f = report.open("w", encoding=ENCODING, newline="")
+    writer = csv.DictWriter(f, fieldnames=CSV_FIELDS, delimiter=delimiter)
+    if not append:
         writer.writeheader()
         f.flush()
     return f, writer
@@ -57,8 +87,8 @@ def open_report_writer(report: Path, resume: bool):
 def write_manual_list(path: Path, rows: list[dict]) -> None:
     """Skriv ei CSV-liste over bilete som ikkje kunne namngivast automatisk, med grunngjeving."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=MANUAL_LIST_FIELDS)
+    with path.open("w", encoding=ENCODING, newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=MANUAL_LIST_FIELDS, delimiter=DELIMITER)
         writer.writeheader()
         for row in rows:
             writer.writerow({k: row.get(k, "") for k in MANUAL_LIST_FIELDS})

@@ -10,12 +10,42 @@ const path = require("node:path");
 const { APP_ICON, gpuSiteDir, resolvePython } = require("./paths");
 
 const IS_WINDOWS = process.platform === "win32";
-// Same CUDA-serie som setup.ps1 og README brukar for browser-appen.
-const CUDA_INDEX_URL = "https://download.pytorch.org/whl/cu124";
+// Same CUDA-serie som setup.ps1 og README brukar for browser-appen. CUDA 12.8 er
+// nedre grense for Blackwell-korta (RTX PRO-serien og GeForce 50-serien); eldre kort
+// er framleis med, sidan cu128-hjula dekkjer dei tidlegare arkitekturane òg.
+const CUDA_SERIES = "cu128";
+const CUDA_INDEX_URL = `https://download.pytorch.org/whl/${CUDA_SERIES}`;
 
-/** GPU-pakkane er installerte når torch ligg i mappa. */
-function isInstalled() {
+/** Fila som fortel kva CUDA-serie pakkane i mappa vart henta frå. */
+function seriesMarker() {
+  return path.join(gpuSiteDir(), "cuda-serie.txt");
+}
+
+/** Serien pakkane vart henta frå, eller null for ein installasjon frå før me merkte dei. */
+function installedSeries() {
+  try {
+    return fs.readFileSync(seriesMarker(), "utf8").trim();
+  } catch {
+    return null;
+  }
+}
+
+function hasPackages() {
   return fs.existsSync(path.join(gpuSiteDir(), "torch"));
+}
+
+/**
+ * GPU-akselerasjonen er på plass fyrst når pakkane kjem frå den CUDA-serien me brukar no.
+ * Eit kort som krev CUDA 12.8 finn ingen kjernar i eldre hjul, og feilen er stille: torch
+ * er installert, men ser ikkje kortet.
+ */
+function isInstalled() {
+  return hasPackages() && installedSeries() === CUDA_SERIES;
+}
+
+/** Pakkar frå ein eldre serie ligg der. Dei må hentast på nytt, ikkje berre supplerast. */
+function isOutdated() {
+  return hasPackages() && installedSeries() !== CUDA_SERIES;
 }
 
 /** Sjekkar om maskina har eit NVIDIA-kort, på same vis som setup.ps1: finst nvidia-smi? */
@@ -79,6 +109,18 @@ function install(parentWindow, log) {
   }
 
   const target = gpuSiteDir();
+  // pip byter ikkje ut pakkar som alt ligg i ei --target-mappe, så ein installasjon frå ei
+  // eldre CUDA-serie må vekk fyrst. Elles ville nedlastinga sjå vellukka ut og endre ingenting.
+  if (isOutdated()) {
+    try {
+      fs.rmSync(target, { recursive: true, force: true });
+    } catch (error) {
+      return Promise.resolve({
+        outcome: "failed",
+        detail: `Klarte ikkje fjerne dei gamle GPU-pakkane i ${target}: ${error.message}`,
+      });
+    }
+  }
   fs.mkdirSync(target, { recursive: true });
 
   const window = createProgressWindow(parentWindow);
@@ -153,7 +195,8 @@ function install(parentWindow, log) {
     child.once("error", (error) => finish({ outcome: "failed", detail: String(error.message) }));
     child.once("exit", (code) => {
       if (cancelled) return finish({ outcome: "cancelled" });
-      if (code === 0 && isInstalled()) {
+      if (code === 0 && hasPackages()) {
+        fs.writeFileSync(seriesMarker(), `${CUDA_SERIES}\n`, "utf8");
         updateSettings({ gpuInstalled: true });
         return finish({ outcome: "installed" });
       }
@@ -167,6 +210,7 @@ module.exports = {
   hasNvidiaGpu,
   install,
   isInstalled,
+  isOutdated,
   readSettings,
   updateSettings,
 };
