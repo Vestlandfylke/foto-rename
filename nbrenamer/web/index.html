@@ -374,6 +374,7 @@
     <div class="result-actions" id="e_done" style="display:none">
       <button class="secondary" id="e_openOut">Opne mappa med bileta</button>
       <button class="secondary" id="e_openReport">Vis rapporten</button>
+      <button class="secondary" id="e_again">Ny omdøyping</button>
     </div>
   </section>
 </main>
@@ -516,6 +517,15 @@ function setBrowseBusy(busy, activeBtn) {
 // Tre nivå, i denne rekkjefølgja: systemdialogen i desktop-appen, som er den raske og
 // riktige, så den same dialogen via backenden (nettlesaren har ikkje noko anna val, men
 // backenden må starte PowerShell for kvart klikk), og til slutt web-veljaren under.
+// Ein sti som blir sett frå ein dialog skal telje som at brukaren endra feltet. Å setje .value
+// frå kode utløyser ikkje change av seg sjølv, og då gjekk til dømes ei ny ut-mappe upåakta hen
+// av alt som lyttar på at feltet er endra.
+function settSti(input, path) {
+  if (!path || input.value === path) return;
+  input.value = path;
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 async function browse(inputId, pick, btn) {
   if (pickerBusy) return;
   const input = $(inputId);
@@ -523,7 +533,7 @@ async function browse(inputId, pick, btn) {
   try {
     if (window.nbrDesktop) {
       const res = await window.nbrDesktop.pickPath(pick, input.value.trim());
-      if (res.path) input.value = res.path;
+      settSti(input, res.path);
       return;
     }
     const r = await fetch('/api/pick?mode=' + pick + '&initial=' + encodeURIComponent(input.value.trim()));
@@ -531,7 +541,7 @@ async function browse(inputId, pick, btn) {
     if (!r.ok) { openCustomPicker(input, pick); return; }  // backend kan ikkje opne native, bruk web-veljaren
     const res = await r.json();
     if (res.cancelled) return;
-    if (res.path) input.value = res.path;
+    settSti(input, res.path);
   } catch (e) {
     openCustomPicker(input, pick);
   } finally {
@@ -591,9 +601,9 @@ $('dirChoose').onclick = () => {
     if (dirPickMode === 'file') {
       const fname = baseName(dirTargetInput.value.trim()) || 'report.csv';
       const sep = dirCurrentPath.endsWith('\\') || dirCurrentPath.endsWith('/') ? '' : '\\';
-      dirTargetInput.value = dirCurrentPath + sep + fname;
+      settSti(dirTargetInput, dirCurrentPath + sep + fname);
     } else {
-      dirTargetInput.value = dirCurrentPath;
+      settSti(dirTargetInput, dirCurrentPath);
     }
   }
   $('dirDlg').close();
@@ -1062,6 +1072,10 @@ function formatBytes(n) {
 
 function flyttar() { return $('e_mode').value === 'move'; }
 
+// Sant medan ei omdøyping går. Utan dette ville det å endre eit felt midt i ei køyring rydda
+// bort framdrifta til den køyringa som faktisk går.
+let executeRunning = false;
+
 // Flytting innanfor éin disk er ei namneendring og går på sekund. På tvers av diskar er ho ei
 // kopiering med sletting etterpå, altså like tung som å kopiere. Brukaren skal vite kva av
 // delane han står i før han startar, ikkje etterpå.
@@ -1167,6 +1181,7 @@ $('e_start').onclick = async () => {
   try {
     await api('/api/execute/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
     $('e_prog').style.display = 'block'; $('e_start').disabled = true;
+    executeRunning = true;
     poll(updateExecute);
   } catch (e) { $('e_msg').className = 'msg error'; $('e_msg').textContent = e.message; }
 };
@@ -1180,9 +1195,13 @@ function updateExecute(j) {
   $('e_cur').textContent = j.current || j.message || '';
   $('e_pct').textContent = progressLine(j).join('  ·  ');
   reportProgress(j, pct);
+  executeRunning = j.state === 'running';
   if (j.state === 'running') setStatusState(`Døyper om · ${pct} % · ${progressLine(j).join(' · ')}`);
   if (j.state !== 'running') {
-    // Hald knappen grå når omdøypinga er ferdig. Ved feil/avbrot kan ein prøve på nytt.
+    // Hald knappen grå når omdøypinga er ferdig, så ingen køyrer det same to gonger utan å vite
+    // det. Endrar brukaren eit val, eller trykkjer han på «Køyr ein ny omdøyping», blir han
+    // aktiv igjen. Ved feil eller avbrot er han aktiv med ein gong, for då skal ein prøve på nytt.
+    // «Ny omdøyping» i knapperada under gjer det same for den som vil køyre det heilt like igjen.
     $('e_start').disabled = (j.state === 'done');
     const r = j.result || {};
     // Konfliktar og feil blir berre nemnde når dei finst, for då er dei noko brukaren må
@@ -1199,10 +1218,12 @@ function updateExecute(j) {
     $('e_msg').textContent = j.state === 'done'
       ? `Ferdig. ${oppsummering}`
       : (j.state === 'cancelled' ? `Avbroten etter ${j.processed} av ${j.total}. ${oppsummering}` : 'Feil: ' + (j.message||''));
-    // Vegen til resultatet finst berre i skrivebordsappen; i nettlesaren kan ikkje ei side
-    // opne Utforskar, og då står stien i feltet over. Ei avbroten køyring har òg laga filer,
-    // så mappa er verdt å opne då.
-    $('e_done').style.display = ((j.state === 'done' || j.state === 'cancelled') && window.nbrDesktop) ? 'flex' : 'none';
+    // Ei avbroten køyring har òg laga filer, så mappa er verdt å opne då. Å opne Utforskar kan
+    // berre skrivebordsappen; i nettlesaren står stien i feltet over i staden. Knappen for ei ny
+    // køyring gjeld uansett, for utan han er «ferdig» ein blindveg.
+    $('e_done').style.display = (j.state === 'done' || j.state === 'cancelled') ? 'flex' : 'none';
+    $('e_openOut').style.display = window.nbrDesktop ? 'inline-block' : 'none';
+    $('e_openReport').style.display = window.nbrDesktop ? 'inline-block' : 'none';
     setStatusState(j.state === 'done' ? `Omdøypinga er ferdig · ${r['omdøypt']||0} bilete på ${formatDuration(j.elapsed)}`
       : j.state === 'cancelled' ? 'Omdøypinga vart avbroten' : 'Omdøypinga feila');
     if (j.state === 'done') {
@@ -1218,9 +1239,25 @@ async function openInExplorer(sti) {
 $('e_openOut').onclick = () => openInExplorer($('e_output').value.trim());
 $('e_openReport').onclick = () => openInExplorer($('e_report').value.trim());
 
-// Gjer omdøypingsknappen aktiv igjen om brukaren endrar noko for ei ny køyring.
-['e_report', 'e_output', 'e_year', 'e_over'].forEach(id =>
-  $(id).addEventListener('change', () => { $('e_start').disabled = false; }));
+// Ei ferdig køyring låser startknappen, slik at ingen køyrer det same to gonger utan å vite det.
+// Dette er vegen ut av den tilstanden: rydd bort resultatet frå førre køyring og gjer knappen
+// klar igjen. Resultatet må bort saman med låsen, elles står framdrifta og teksten frå den gamle
+// køyringa att medan brukaren startar ei ny.
+function klarForNyKøyring() {
+  if (executeRunning) return;
+  $('e_start').disabled = false;
+  $('e_prog').style.display = 'none';
+  $('e_msg').className = 'msg'; $('e_msg').textContent = '';
+  $('e_done').style.display = 'none';
+}
+
+$('e_again').onclick = klarForNyKøyring;
+
+// Endrar brukaren noko som gjeld den neste køyringa, er det same som å be om ei ny. Valet
+// mellom kopier og flytt hører med her: det var nettopp det tilfellet som gjorde at knappen
+// stod grå etter ei ferdig kopiering.
+['e_report', 'e_output', 'e_mode', 'e_moveOk', 'e_year', 'e_over'].forEach(id =>
+  $(id).addEventListener('change', klarForNyKøyring));
 </script>
 </body>
 </html>
