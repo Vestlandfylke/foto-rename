@@ -653,7 +653,8 @@ function setStatusReport(sti, rader) {
 // Oppgåvelinja og varselet finst berre i skrivebordsappen. I nettlesaren viser fana framdrifta.
 function reportProgress(j, pct) {
   document.title = j.state === 'running' ? `${pct} % · NB foto-namngivar` : 'NB foto-namngivar';
-  window.nbrDesktop?.setProgress(j.state === 'running' && j.total ? j.processed / j.total : -1);
+  window.nbrDesktop?.setProgress(j.state === 'running' && j.total ? j.processed / j.total : -1,
+                                 j.state === 'running');
 }
 
 // ---- Leseretningar ----
@@ -1213,7 +1214,10 @@ function updateExecute(j) {
     // sjølv om JPEG-en fekk nytt namn, og då må det stå her og ikkje berre i lista.
     if (r['tiff_feil']) deler.push(`TIFF-ar som ikkje kom med: ${r['tiff_feil']}`);
     const oppsummering = deler.join(', ') + '.'
-      + ((r['konflikt'] || r['feil'] || r['tiff_feil']) ? ' Sjå uidentifiserte.csv i _manuell for kva som ikkje kom med.' : '');
+      + ((r['konflikt'] || r['feil'] || r['tiff_feil']) ? ' Sjå uidentifiserte.csv i _manuell for kva som ikkje kom med.' : '')
+      // Kvitteringa blir ført mens køyringa går, så ho er verdt å nemne òg når køyringa vart
+      // avbroten: då er ho lista over kva som faktisk kom på plass før stoppen.
+      + (r['done_list'] ? ' omdøypte.csv i ut-mappa viser kva fil som vart kva.' : '');
     $('e_msg').className = 'msg' + (j.state === 'error' ? ' error' : '');
     $('e_msg').textContent = j.state === 'done'
       ? `Ferdig. ${oppsummering}`

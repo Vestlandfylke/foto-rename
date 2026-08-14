@@ -6,7 +6,7 @@ import csv
 import os
 from pathlib import Path
 
-from .core import COMPARE_FIELDS, CSV_FIELDS, FOLDER_LIST_FIELDS, MANUAL_LIST_FIELDS
+from .core import COMPARE_FIELDS, CSV_FIELDS, DONE_LIST_FIELDS, FOLDER_LIST_FIELDS, MANUAL_LIST_FIELDS
 
 # Rapportane blir opna i Excel, og Excel på norsk Windows deler kolonnar på semikolon.
 # Han les fila som UTF-8 berre når ho startar med eit BOM, som "utf-8-sig" legg inn;
@@ -78,6 +78,32 @@ def open_report_writer(report: Path, resume: bool):
         delimiter = DELIMITER
         f = report.open("w", encoding=ENCODING, newline="")
     writer = csv.DictWriter(f, fieldnames=CSV_FIELDS, delimiter=delimiter)
+    if not append:
+        writer.writeheader()
+        f.flush()
+    return f, writer
+
+
+def open_done_writer(path: Path):
+    """
+    Opnar lista over filer som kom på plass, for skriving ei rad om gongen.
+
+    Rada blir skriven med ein gong fila er kopiert, ikkje til slutt. Ei køyring over ei helg kan
+    bli avbroten av straumbrot eller ein full disk, og då er lista fram til avbrotet den einaste
+    kjelda til kva som faktisk vart gjort. Går køyringa på nytt mot same ut-mappa, blir radene
+    lagde til, for dette er ein logg og ikkje eit augneblinksbilete.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    append = path.exists()
+    if append:
+        # Fila har alt eit BOM, og "utf-8-sig" ville lagt inn eitt nytt midt i henne.
+        delimiter = _delimiter_in(path)
+        f = path.open("a", encoding="utf-8", newline="")
+    else:
+        delimiter = DELIMITER
+        f = path.open("w", encoding=ENCODING, newline="")
+    writer = csv.DictWriter(f, fieldnames=DONE_LIST_FIELDS, delimiter=delimiter,
+                            extrasaction="ignore")
     if not append:
         writer.writeheader()
         f.flush()

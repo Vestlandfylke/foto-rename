@@ -2,7 +2,7 @@
 // ABOUTME: Backenden bind seg til 127.0.0.1 på ein ledig port, og blir alltid avslutta saman med appen.
 "use strict";
 
-const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, powerSaveBlocker, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -389,14 +389,32 @@ function registerOpenHandler() {
   });
 }
 
+// Ei lesing av eit heilt arkivuttrekk går over natta eller helga, og då er maskina ubetjent.
+// Sovnar ho, står jobben stille til nokon kjem tilbake og vekkjer henne. Blokkeringa hindrar
+// dvale utan å halde skjermen lysande, og ho blir sett medan ein jobb går og fjerna når han
+// er ferdig. Prosessen eig blokkeringa, så ho forsvinn uansett når appen blir avslutta.
+let sleepBlocker = null;
+
+function holdWake(active) {
+  if (active && sleepBlocker === null) {
+    sleepBlocker = powerSaveBlocker.start("prevent-app-suspension");
+  } else if (!active && sleepBlocker !== null) {
+    powerSaveBlocker.stop(sleepBlocker);
+    sleepBlocker = null;
+  }
+}
+
 /**
  * Ei OCR-køyring over eit heilt arkivuttrekk kan ta timar. Då skal brukaren kunne gjere anna
  * arbeid og likevel sjå kor langt det har komme, og bli varsla når det er gjort.
  */
 function registerProgressHandlers() {
-  ipcMain.on("set-progress", (event, { fraction } = {}) => {
+  ipcMain.on("set-progress", (event, { fraction, running } = {}) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     win?.setProgressBar(typeof fraction === "number" ? fraction : -1);
+    // Framdrifta er -1 heilt i starten av ein jobb, før totalen er kjend, så ho kan ikkje
+    // brukast til å avgjere om noko går. Sida seier det direkte i staden.
+    holdWake(running === true);
   });
 
   ipcMain.on("notify", (event, { title, body } = {}) => {

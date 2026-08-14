@@ -175,6 +175,8 @@ def cmd_execute(args):
     if stats.get("tiff_feil"):
         print(f"TIFF-ar utan plass: {stats['tiff_feil']} (jpg-en kom med, tif-en ikkje)")
     print(f"Utdata i:           {args.output_dir}")
+    if stats.get("done_list"):
+        print(f"Liste over omdøypte:       {stats['done_list']}")
     if stats.get("manual_list"):
         print(f"Liste over uidentifiserte: {stats['manual_list']}")
     return 0

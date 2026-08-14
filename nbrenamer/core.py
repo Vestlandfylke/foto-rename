@@ -86,6 +86,11 @@ CSV_FIELDS = [
 
 MANUAL_LIST_FIELDS = ["original_jpg", "matched_tiff", "status", "grunngjeving", "kopiert_til"]
 
+# Lista over dei som gjekk gjennom, ført mens køyringa går. Rapporten fortel kva namn kvar fil
+# skulle få, men ikkje kva som faktisk vart skrive, og det er det ein revisjon spør om. Kjelde og
+# mål ligg side om side, slik at ein kan gå baklengs frå ei fil i ut-mappa til originalen.
+DONE_LIST_FIELDS = ["original_jpg", "ny_jpg", "matched_tiff", "ny_tiff", "foto_id", "handling"]
+
 # Rekneskapen per mappe. Med fleire hundre mapper i eit uttrekk kan ingen sjå gjennom tolv
 # tusen rader, men ein kan sjå gjennom dei mappene som ikkje går opp.
 FOLDER_LIST_FIELDS = [

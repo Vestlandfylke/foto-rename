@@ -12,7 +12,7 @@ from typing import Callable, Optional
 from . import core
 from .core import OcrConfig, build_engine, process_one, reason_for, STATUS_OK
 from .folders import FolderIndex, unused_tiffs, walk_folders
-from .report import write_manual_list
+from .report import open_done_writer, write_manual_list
 
 # ----------------------------------------------------------------------------
 # discover
@@ -121,7 +121,11 @@ def run_discover(
                 if str(tiff) not in done:
                     counter(core.orphan_tiff_row(tiff))
             pairs = index.jpg_pairs()
-            used_tiffs.update(tif for _jpg, tif in pairs if tif is not None)
+            # Settet er berre til for å finne foreldrelause TIFF-ar i ei eiga TIFF-mappe etterpå.
+            # Ligg TIFF-ane saman med bileta, veit kvar mappe alt sitt eige, og då er dette berre
+            # ei liste som veks med heile uttrekket utan å bli lesen.
+            if tiff_dir is not None:
+                used_tiffs.update(tif for _jpg, tif in pairs if tif is not None)
             todo = [(jpg, tif) for jpg, tif in pairs if str(jpg) not in done]
             note = ""
             try:
@@ -360,9 +364,10 @@ def _truncated_note(name: str, folder: Path) -> str:
 
 
 def _place_tiff(row: dict, tiff: Optional[Path], folder: Path, name: str, move: bool,
-                overwrite: bool, stats: dict, manual_rows: list[dict]) -> None:
+                overwrite: bool, stats: dict, manual_rows: list[dict]) -> str:
     """
-    Legg TIFF-en ved sida av JPEG-en, og meld frå dersom han ikkje kom på plass.
+    Legg TIFF-en ved sida av JPEG-en, og meld frå dersom han ikkje kom på plass. Returnerer stien
+    han fekk, eller tom streng når det ikkje vart nokon TIFF.
 
     TIFF-en er den store halvparten av paret, rundt 630 MB av 650. Tidlegare vart resultatet av
     denne kopieringa kasta, så ein kollisjon eller ein avkorta kopi på arkivmasteren gjekk stille
@@ -370,21 +375,34 @@ def _place_tiff(row: dict, tiff: Optional[Path], folder: Path, name: str, move: 
     same kor fin JPEG-en er.
     """
     if not tiff:
-        return
+        return ""
     if not tiff.exists():
         stats["tiff_feil"] += 1
         manual_rows.append(_manual_note(
             row, f"TIFF-en rapporten peikar på finst ikkje: {tiff}", ""))
-        return
+        return ""
     res = _place_file(tiff, folder / name, move, overwrite)
     if res == "ok":
-        return
+        return str(folder / name)
     stats["tiff_feil"] += 1
     if res == "konflikt":
         manual_rows.append(_manual_note(
             row, f"{name} låg alt i {folder}, så TIFF-en vart ikkje kopiert.", ""))
     else:
         manual_rows.append(_manual_note(row, _truncated_note(name, folder), str(folder)))
+    return ""
+
+
+def _done_note(row: dict, new_jpg: Path, new_tiff: str, move: bool) -> dict:
+    """Ei rad til lista over filer som kom på plass: kva som vart kva, med full sti begge vegar."""
+    return {
+        "original_jpg": row.get("original_jpg", ""),
+        "ny_jpg": str(new_jpg),
+        "matched_tiff": row.get("matched_tiff", ""),
+        "ny_tiff": new_tiff,
+        "foto_id": row.get("foto_id", "") or row.get("new_basename", ""),
+        "handling": "flytta" if move else "kopiert",
+    }
 
 
 def will_be_renamed(row: dict) -> bool:
@@ -405,7 +423,12 @@ def execute_rows(
     on_progress: Optional[Callable[[int, int, dict], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> dict:
-    """Kopierer/omdøyper etter rapport-radene. Returnerer statistikk og sti til manuell-lista."""
+    """
+    Kopierer/omdøyper etter rapport-radene. Returnerer statistikk og stiane til dei to listene:
+    `omdøypte.csv` med det som kom på plass, og `_manuell\\uidentifiserte.csv` med det som ikkje
+    gjorde det. Til saman er dei kvitteringa på køyringa, og dei er skrivne slik at dei kan lesast
+    utan å ha appen open.
+    """
     output_dir = Path(output_dir)
     manual_root = output_dir / "_manuell"
     # omdøypt, manuell, konflikt og feil er talde per rad og summerer til talet på rader me kom
@@ -415,63 +438,86 @@ def execute_rows(
     manual_rows: list[dict] = []
     total = len(rows)
 
-    for idx, row in enumerate(rows, 1):
-        if should_stop and should_stop():
-            break
+    # Lista blir fyrst oppretta når noko faktisk kom på plass, slik at ei køyring der alt gjekk
+    # til _manuell ikkje legg att ei fil med berre overskrifter.
+    done_list = output_dir / "omdøypte.csv"
+    done_file = None
+    done_writer = None
 
-        # Éi fil som ikkje lèt seg kopiere skal ikkje stoppe dei tusen som står att. Ho blir
-        # talt som feil og hamnar i manuell-lista med grunnen, slik at brukaren kan ta dei
-        # etterpå i staden for å køyre alt om igjen.
-        try:
-            jpg = Path(row["original_jpg"])
-            tiff = Path(row["matched_tiff"]) if row.get("matched_tiff") else None
-            status = row["status"]
+    def note_done(row: dict, new_jpg: Path, new_tiff: str) -> None:
+        nonlocal done_file, done_writer
+        if done_writer is None:
+            done_file, done_writer = open_done_writer(done_list)
+        done_writer.writerow(_done_note(row, new_jpg, new_tiff, move))
+        # Kvar rad blir skriven ut med ein gong. Kopieringa av eit par tek sekund, så ei skriving
+        # på nokre hundre byte kostar ingenting, og til gjengjeld er lista sann heilt fram til
+        # det sekundet ei køyring over natta måtte bli avbroten.
+        done_file.flush()
 
-            if will_be_renamed(row):
-                target_dir = output_dir / row["year"] if (organize_by_year and row.get("year")) else output_dir
-                base = row["new_basename"]
-                name = base + jpg.suffix.lower()
-                res = _place_file(jpg, target_dir / name, move, overwrite)
-                if res == "konflikt":
-                    stats["konflikt"] += 1
-                    manual_rows.append(
-                        _manual_note(row, f"{name} låg alt i {target_dir}, så fila vart ikkje kopiert.", "")
-                    )
-                elif res == "avkorta":
-                    stats["feil"] += 1
-                    manual_rows.append(_manual_note(row, _truncated_note(name, target_dir), str(target_dir)))
+    try:
+        for idx, row in enumerate(rows, 1):
+            if should_stop and should_stop():
+                break
+
+            # Éi fil som ikkje lèt seg kopiere skal ikkje stoppe dei tusen som står att. Ho blir
+            # talt som feil og hamnar i manuell-lista med grunnen, slik at brukaren kan ta dei
+            # etterpå i staden for å køyre alt om igjen.
+            try:
+                jpg = Path(row["original_jpg"])
+                tiff = Path(row["matched_tiff"]) if row.get("matched_tiff") else None
+                status = row["status"]
+
+                if will_be_renamed(row):
+                    target_dir = output_dir / row["year"] if (organize_by_year and row.get("year")) else output_dir
+                    base = row["new_basename"]
+                    name = base + jpg.suffix.lower()
+                    res = _place_file(jpg, target_dir / name, move, overwrite)
+                    if res == "konflikt":
+                        stats["konflikt"] += 1
+                        manual_rows.append(
+                            _manual_note(row, f"{name} låg alt i {target_dir}, så fila vart ikkje kopiert.", "")
+                        )
+                    elif res == "avkorta":
+                        stats["feil"] += 1
+                        manual_rows.append(_manual_note(row, _truncated_note(name, target_dir), str(target_dir)))
+                    else:
+                        new_tiff = _place_tiff(row, tiff, target_dir,
+                                               base + tiff.suffix.lower() if tiff else "",
+                                               move, overwrite, stats, manual_rows)
+                        stats["omdøypt"] += 1
+                        note_done(row, target_dir / name, new_tiff)
                 else:
-                    _place_tiff(row, tiff, target_dir, base + tiff.suffix.lower() if tiff else "",
-                                move, overwrite, stats, manual_rows)
-                    stats["omdøypt"] += 1
-            else:
-                sub = manual_root / status
-                res = _place_file(jpg, sub / jpg.name, move, overwrite)
-                if res == "konflikt":
-                    stats["konflikt"] += 1
-                    manual_rows.append(
-                        _manual_note(row, f"{jpg.name} låg alt i {sub}, så fila vart ikkje kopiert.", "")
-                    )
-                elif res == "avkorta":
-                    stats["feil"] += 1
-                    manual_rows.append(_manual_note(row, _truncated_note(jpg.name, sub), str(sub)))
-                else:
-                    _place_tiff(row, tiff, sub, tiff.name if tiff else "",
-                                move, overwrite, stats, manual_rows)
-                    stats["manuell"] += 1
-                    manual_rows.append(
-                        _manual_note(row, reason_for(status, row.get("error", "")), str(sub))
-                    )
-        except Exception as exc:  # noqa: BLE001 - éi fil skal ikkje stoppe heile køyringa
-            stats["feil"] += 1
-            manual_rows.append(_manual_note(row, f"Klarte ikkje kopiere fila: {type(exc).__name__}: {exc}", ""))
+                    sub = manual_root / status
+                    res = _place_file(jpg, sub / jpg.name, move, overwrite)
+                    if res == "konflikt":
+                        stats["konflikt"] += 1
+                        manual_rows.append(
+                            _manual_note(row, f"{jpg.name} låg alt i {sub}, så fila vart ikkje kopiert.", "")
+                        )
+                    elif res == "avkorta":
+                        stats["feil"] += 1
+                        manual_rows.append(_manual_note(row, _truncated_note(jpg.name, sub), str(sub)))
+                    else:
+                        _place_tiff(row, tiff, sub, tiff.name if tiff else "",
+                                    move, overwrite, stats, manual_rows)
+                        stats["manuell"] += 1
+                        manual_rows.append(
+                            _manual_note(row, reason_for(status, row.get("error", "")), str(sub))
+                        )
+            except Exception as exc:  # noqa: BLE001 - éi fil skal ikkje stoppe heile køyringa
+                stats["feil"] += 1
+                manual_rows.append(_manual_note(row, f"Klarte ikkje kopiere fila: {type(exc).__name__}: {exc}", ""))
 
-        if on_progress:
-            on_progress(idx, total, row)
+            if on_progress:
+                on_progress(idx, total, row)
+    finally:
+        if done_file is not None:
+            done_file.close()
 
     manual_list = manual_root / "uidentifiserte.csv"
     if manual_rows:
         write_manual_list(manual_list, manual_rows)
 
     stats["manual_list"] = str(manual_list) if manual_rows else ""
+    stats["done_list"] = str(done_list) if done_writer is not None else ""
     return stats

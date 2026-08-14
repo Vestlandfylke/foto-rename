@@ -22,9 +22,10 @@ contextBridge.exposeInMainWorld("nbrDesktop", {
 
   /**
    * Framdrifta i oppgåvelinja, som ein del mellom 0 og 1. -1 fjernar henne. Lèt brukaren
-   * følgje med på ei lang OCR-køyring utan å ha appen framme.
+   * følgje med på ei lang OCR-køyring utan å ha appen framme. `running` seier om ein jobb
+   * går, og styrer at maskina ikkje sovnar midt i ei køyring som varer over natta.
    */
-  setProgress: (fraction) => ipcRenderer.send("set-progress", { fraction }),
+  setProgress: (fraction, running) => ipcRenderer.send("set-progress", { fraction, running }),
 
   /** Varsel når ein lang jobb er ferdig. Blir berre vist om vindauget ikkje er framme. */
   notify: (title, body) => ipcRenderer.send("notify", { title, body }),
