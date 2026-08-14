@@ -92,6 +92,13 @@
   .check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; }
   .check-row input { width: 16px; height: 16px; flex: 0 0 auto; margin: 0; }
   .check-field .help { margin-top: 3px; }
+  /* Flytting er den einaste handlinga i appen som fjernar originalar. Ho skal difor sjå
+     annleis ut enn resten av vala, og ikkje kunne startast med eit uoppmerksamt klikk. */
+  .danger-field { max-width: 820px; margin: -6px 0 14px; padding: 10px 12px; border: 1px solid var(--err);
+    border-left-width: 4px; border-radius: var(--ctrl-radius); background: #fef2f2; }
+  .danger-field p { margin: 0 0 8px; font-size: 13px; color: var(--err); font-weight: 600; }
+  .danger-field .check-row { color: var(--err); }
+  .danger-field.mangler { box-shadow: 0 0 0 3px rgba(220, 38, 38, .12); }
   button { background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: var(--ctrl-radius); padding: 5px 14px; font: inherit; font-weight: 600; cursor: pointer; }
   button:hover { filter: brightness(1.1); }
   button.secondary { background: var(--panel2); border-color: var(--ctrl-border); color: var(--brand); }
@@ -115,7 +122,9 @@
      brukaren korkje lese det OCR-en fann eller kontrollere det han sjølv skriv. */
   #r_table th:nth-child(3), #r_table td:nth-child(3),
   #r_table th:nth-child(4), #r_table td:nth-child(4) { min-width: 172px; }
-  .status-ok { color: var(--ok); } .status-manuell_ingen_id, .status-manuell_uventa_tal { color: var(--warn); } .status-feil { color: var(--err); }
+  .status-ok { color: var(--ok); }
+  .status-manuell_ingen_id, .status-manuell_uventa_tal, .status-manuell_tiff_utan_jpg { color: var(--warn); }
+  .status-feil { color: var(--err); }
   .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
   .toolbar .grow { flex: 1; }
   .pager { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
@@ -342,6 +351,10 @@
         <option value="move">Flytt dei, originalane forsvinn frå kjeldemappa</option>
       </select>
       <span class="help" id="e_modeHelp">Kopiering er tryggast, men treng like mykje ledig plass som heile uttrekket.</span>
+    </div>
+    <div class="danger-field" id="e_moveWarn" style="display:none">
+      <p>Du har vald å flytte. Originalane blir borte frå kjeldemappa, både JPEG og TIFF, og finst etterpå berre i ut-mappa.</p>
+      <label class="check-row"><input type="checkbox" id="e_moveOk" /><span>Ja, eg vil flytte originalane</span></label>
     </div>
     <div class="check-field">
       <label class="check-row"><input type="checkbox" id="e_year" checked /><span>Sorter i mapper per år</span></label>
@@ -686,6 +699,18 @@ $('d_start').onclick = async () => {
 };
 $('d_cancel').onclick = () => api('/api/cancel', { method: 'POST' });
 
+// Kva lesinga fann på mappenivå. Med fleire hundre mapper kan ingen kontrollere tolv tusen
+// rader, men ein kan kontrollere dei mappene som ikkje går opp, og dei står i mappelista.
+function rekneskapslinje(res) {
+  if (!res || !res.folders) return '';
+  const deler = [`${res.folders} mapper`];
+  if (res.orphan_tiffs) deler.push(`${res.orphan_tiffs} TIFF utan JPEG`);
+  if (res.folders_unbalanced) deler.push(`${res.folders_unbalanced} mappe(r) går ikkje opp`);
+  let linje = ' ' + deler.join(', ') + '.';
+  if (res.folder_list) linje += ` Mapperekneskap: ${res.folder_list}`;
+  return linje;
+}
+
 function updateDiscover(j) {
   const pct = j.total ? Math.round(100 * j.processed / j.total) : 0;
   $('d_bar').style.width = pct + '%';
@@ -699,7 +724,8 @@ function updateDiscover(j) {
   if (j.state !== 'running') {
     $('d_start').disabled = false;
     $('d_msg').className = 'msg' + (j.state === 'error' ? ' error' : '');
-    $('d_msg').textContent = (j.state === 'done' ? 'Ferdig. ' : j.state === 'cancelled' ? 'Avbroten. ' : 'Feil: ') + (j.message || '');
+    $('d_msg').textContent = (j.state === 'done' ? 'Ferdig. ' : j.state === 'cancelled' ? 'Avbroten. ' : 'Feil: ')
+      + (j.message || '') + rekneskapslinje(j.result);
     if (j.state === 'done') { $('r_report').value = $('d_report').value; $('e_report').value = $('d_report').value; }
     $('d_goto2').style.display = (j.state === 'done') ? 'inline-block' : 'none';
     setStatusState(j.state === 'done' ? `Lesinga er ferdig · ${j.processed} bilete på ${formatDuration(j.elapsed)}`
@@ -1040,10 +1066,17 @@ function flyttar() { return $('e_mode').value === 'move'; }
 // kopiering med sletting etterpå, altså like tung som å kopiere. Brukaren skal vite kva av
 // delane han står i før han startar, ikkje etterpå.
 $('e_mode').onchange = () => {
-  $('e_modeHelp').textContent = flyttar()
+  const flytt = flyttar();
+  $('e_modeHelp').textContent = flytt
     ? 'Kjeldemappa må vere skrivbar. Ligg ho på same disk som ut-mappa, går flyttinga på sekund utan behov for ledig plass. Ligg ho på ein annan disk, blir filene kopierte og originalane sletta etterpå.'
     : 'Kopiering er tryggast, men treng like mykje ledig plass som heile uttrekket.';
+  // Godkjenninga blir nullstilt kvar gong valet blir endra, slik at ho alltid gjeld det
+  // valet som står no, og ikkje eit ho gav for eit anna val tidlegare.
+  $('e_moveWarn').style.display = flytt ? 'block' : 'none';
+  $('e_moveWarn').classList.remove('mangler');
+  $('e_moveOk').checked = false;
 };
+$('e_moveOk').onchange = () => $('e_moveWarn').classList.remove('mangler');
 
 // Eitt klikk skriv tusenvis av filer til disk. Difor blir omfanget lagt fram fyrst, med tal
 // rekna av backenden etter same regel som køyringa sjølv brukar.
@@ -1113,6 +1146,15 @@ $('e_start').onclick = async () => {
   if (!$('e_output').value.trim()) {
     $('e_msg').className = 'msg error';
     $('e_msg').textContent = 'Vel ei mappe der dei omdøypte bileta skal leggast.';
+    return;
+  }
+  // Flyttinga fjernar originalar, og det skal ikkje kunne skje fordi nokon berre bomma i
+  // nedtrekksfeltet. Godkjenninga må stå før stadfestingsdialogen i det heile blir vist.
+  if (flyttar() && !$('e_moveOk').checked) {
+    $('e_moveWarn').classList.add('mangler');
+    $('e_moveOk').focus();
+    $('e_msg').className = 'msg error';
+    $('e_msg').textContent = 'Kryss av for at du vil flytte originalane, eller vel kopiering.';
     return;
   }
   try {

@@ -10,6 +10,7 @@ from typing import Callable, Optional
 
 from . import core
 from .core import OcrConfig, build_engine, process_one, reason_for, STATUS_OK
+from .folders import FolderIndex, unused_tiffs, walk_folders
 from .report import write_manual_list
 
 # ----------------------------------------------------------------------------
@@ -25,37 +26,174 @@ def _worker_init(pattern_str, max_dim, rotations, autocontrast, prefix, device, 
     _W["device"] = actual
 
 
-def _worker_process(jpg_str: str, tiff_dir_str: Optional[str]) -> dict:
-    tiff_dir = Path(tiff_dir_str) if tiff_dir_str else None
-    return process_one(_W["engine"], Path(jpg_str), tiff_dir, _W["cfg"])
+def _worker_process(jpg_str: str, tiff_str: Optional[str]) -> dict:
+    tiff = Path(tiff_str) if tiff_str else None
+    return process_one(_W["engine"], Path(jpg_str), _W["cfg"], tiff)
+
+
+# (jpg, tif eller None). Paret er alt avgjort av mappe-indekseringa, så ingen av køyrarane
+# leitar etter partnarar sjølv.
+JpgPair = tuple[Path, Optional[Path]]
 
 
 def run_discover_sequential(
-    todo: list[Path],
+    todo: list[JpgPair],
     engine,
-    tiff_dir: Optional[Path],
     cfg: OcrConfig,
-    on_row: Callable[[dict, int], None],
+    on_row: Callable[[dict], None],
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> None:
-    for i, jpg in enumerate(todo, 1):
+    for jpg, tiff in todo:
         if should_stop and should_stop():
             break
-        on_row(process_one(engine, jpg, tiff_dir, cfg), i)
+        on_row(process_one(engine, jpg, cfg, tiff))
 
 
 def run_discover_multiprocess(
-    todo: list[Path],
-    tiff_dir: Optional[Path],
+    todo: list[JpgPair],
     init_primitives: tuple,
-    on_row: Callable[[dict, int], None],
+    on_row: Callable[[dict], None],
     workers: int,
 ) -> None:
-    tiff_dir_str = str(tiff_dir) if tiff_dir else None
     with ProcessPoolExecutor(max_workers=workers, initializer=_worker_init, initargs=init_primitives) as ex:
-        futures = {ex.submit(_worker_process, str(jpg), tiff_dir_str): jpg for jpg in todo}
-        for i, fut in enumerate(as_completed(futures), 1):
-            on_row(fut.result(), i)
+        _submit_folder(ex, todo, on_row)
+
+
+def _submit_folder(ex: ProcessPoolExecutor, todo: list[JpgPair],
+                   on_row: Callable[[dict], None]) -> None:
+    """
+    Sender éi mappe til bassenget og ventar på henne.
+
+    Berre denne mappa er i lufta om gongen. Å sende inn alt på ein gong ville laga ei liste
+    med eit framtidsobjekt per fil, altså titusenvis av dei, og då veks minnebruken med
+    storleiken på uttrekket i staden for med storleiken på den største mappa.
+    """
+    futures = [
+        ex.submit(_worker_process, str(jpg), str(tiff) if tiff else None)
+        for jpg, tiff in todo
+    ]
+    for fut in as_completed(futures):
+        on_row(fut.result())
+
+
+def run_discover(
+    input_dir: Path,
+    tiff_dir: Optional[Path],
+    cfg: OcrConfig,
+    on_row: Callable[[dict], None],
+    *,
+    engine=None,
+    workers: int = 1,
+    init_primitives: Optional[tuple] = None,
+    done: frozenset[str] = frozenset(),
+    should_stop: Optional[Callable[[], bool]] = None,
+    skip: tuple[Path, ...] = (),
+) -> list[dict]:
+    """
+    Går gjennom inn-mappa mappe for mappe, les det som står att, og returnerer mapperekneskapen.
+
+    Éi mappe om gongen er det som gjer at minnebruken blir sett av den største mappa og ikkje
+    av kor stort uttrekket er, og at kvar mappe kan gjerast opp mot disken med ein gong.
+    TIFF-ar utan JPEG blir aldri lesne, men dei får rad, slik at dei ikkje forsvinn ut av
+    rekneskapen.
+    """
+    stopped = (lambda: False) if should_stop is None else should_stop
+    counter = _RowCounter(on_row)
+    accounts: list[dict] = []
+    used_tiffs: set[Path] = set()
+
+    pool = None
+    if workers > 1:
+        if init_primitives is None:
+            raise ValueError("init_primitives må vere med når workers > 1")
+        pool = ProcessPoolExecutor(max_workers=workers, initializer=_worker_init,
+                                   initargs=init_primitives)
+    try:
+        for index in walk_folders(input_dir, tiff_dir, skip):
+            if stopped():
+                break
+            before = counter.n
+            # TIFF-ane utan partnar fyrst, slik at dei står øvst i si eiga mappe i rapporten.
+            for tiff in sorted(index.orphan_tiff.values()):
+                if str(tiff) not in done:
+                    counter(core.orphan_tiff_row(tiff))
+            pairs = index.jpg_pairs()
+            used_tiffs.update(tif for _jpg, tif in pairs if tif is not None)
+            todo = [(jpg, tif) for jpg, tif in pairs if str(jpg) not in done]
+            if pool is not None:
+                _submit_folder(pool, todo, counter)
+            else:
+                run_discover_sequential(todo, engine, cfg, counter, should_stop)
+            accounts.append(folder_account(index, input_dir, counter.n - before, done))
+
+        if tiff_dir is not None and not stopped():
+            # Ligg TIFF-ane i ei eiga mappe, kan ingen vite kven som er foreldrelaus før
+            # heile treet er gjennomgått og alle partnarane er kjende.
+            extra = unused_tiffs(tiff_dir, used_tiffs)
+            before = counter.n
+            for tiff in extra:
+                if str(tiff) not in done:
+                    counter(core.orphan_tiff_row(tiff))
+            if extra:
+                accounts.append({
+                    "mappe": str(tiff_dir),
+                    "jpg": 0, "tiff": len(extra), "par": 0,
+                    "tiff_utan_jpg": len(extra), "jpg_utan_tiff": 0,
+                    "rader": counter.n - before,
+                    "gjer_opp": "ja",
+                    "merknad": f"{len(extra)} tiff utan jpg i eiga tiff-mappe",
+                })
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=True)
+    return accounts
+
+
+class _RowCounter:
+    """Tel radene på veg ut, slik at kvar mappe kan gjerast opp mot filene som låg der."""
+
+    def __init__(self, on_row: Callable[[dict], None]):
+        self._on_row = on_row
+        self.n = 0
+
+    def __call__(self, row: dict) -> None:
+        self.n += 1
+        self._on_row(row)
+
+
+def folder_account(index: FolderIndex, input_dir: Path, rows_written: int,
+                   done: frozenset[str]) -> dict:
+    """
+    Ei rad i mapperekneskapen: kva som låg i mappa, og kor mange rader ho fekk.
+
+    `gjer_opp` er ja når kvar JPEG og kvar TIFF utan partnar har fått ei rad. TIFF-ane i par
+    er gjorde greie for gjennom rada til JPEG-en sin, der dei står i `matched_tiff`. Ved
+    gjenopptak tel radene frå den førre køyringa med; elles ville alt sett ut som om det mangla.
+    """
+    expected = index.n_jpg + len(index.orphan_tiff)
+    from_before = sum(1 for jpg, _tif in index.jpg_pairs() if str(jpg) in done)
+    from_before += sum(1 for tif in index.orphan_tiff.values() if str(tif) in done)
+    accounted = rows_written + from_before
+    try:
+        name = str(index.path.relative_to(input_dir))
+    except ValueError:
+        name = str(index.path)
+    notes = []
+    if index.orphan_tiff:
+        notes.append(f"{len(index.orphan_tiff)} tiff utan jpg")
+    if accounted != expected:
+        notes.append(f"{expected - accounted} fil(er) utan rad")
+    return {
+        "mappe": name,
+        "jpg": index.n_jpg,
+        "tiff": index.n_tiff,
+        "par": len(index.paired),
+        "tiff_utan_jpg": len(index.orphan_tiff),
+        "jpg_utan_tiff": len(index.lone_jpg),
+        "rader": accounted,
+        "gjer_opp": "ja" if accounted == expected else "nei",
+        "merknad": "; ".join(notes),
+    }
 
 
 # ----------------------------------------------------------------------------

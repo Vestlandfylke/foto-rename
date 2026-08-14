@@ -63,7 +63,7 @@ Begge opnar nettlesaren på `http://127.0.0.1:8000` automatisk. Appen køyrer lo
 
 Grensesnittet er bygd som eit programvindauge, ikkje som ei nettside: verktøylinje med logo øvst, faner for dei tre stega, ei arbeidsflate som fyller vindauget og rullar for seg sjølv med tabellhovudet fastlåst, og ei statuslinje langs botnen som viser kva appen gjer, kva rapport som er open, kor mange rader ho har og om jobben går på GPU eller CPU. Tre steg i UI-et:
 
-1. **Les og rapporter**: vel inn-mappe, eining (GPU/CPU) og innstillingar, start OCR og følg framdrifta, med tid att undervegs. Alle undermapper blir tekne med, så eit heilt uttrekk med hundrevis av fotomapper er éi køyring. TIFF-en blir kopla til biletet automatisk når han har same filnamn, og følgjer JPEG-en med det nye namnet i steg 3. Under **Avanserte val** vel du kvar ID-stripa ligg på bileta (nedst, langs venstre eller høgre kant, eller opp ned) i staden for å skrive gradar. Appen prøver retningane i tur og orden og stoppar ved fyrste treff, så kvar ekstra retning kostar berre tid på bilete som ikkje gav treff før.
+1. **Les og rapporter**: vel inn-mappe, eining (GPU/CPU) og innstillingar, start OCR og følg framdrifta, med tid att undervegs. Alle undermapper blir tekne med, så eit heilt uttrekk med hundrevis av fotomapper er éi køyring. TIFF-en blir kopla til biletet automatisk når han har same filnamn, og følgjer JPEG-en med det nye namnet i steg 3. Ein TIFF som manglar JPEG-en sin får status **TIFF utan JPEG**: han blir aldri gissa på, men han blir med, slik at han ikkje blir liggjande att. Når lesinga er ferdig, står det kor mange mapper som vart gjennomgått og om nokon av dei ikkje går opp mot filene på disken. Under **Avanserte val** vel du kvar ID-stripa ligg på bileta (nedst, langs venstre eller høgre kant, eller opp ned) i staden for å skrive gradar. Appen prøver retningane i tur og orden og stoppar ved fyrste treff, så kvar ekstra retning kostar berre tid på bilete som ikkje gav treff før.
 2. **Gjennomgå**: hent rapporten og rett Foto-ID/status der det trengst. Rapportar med mange bilete blir henta 200 rader om gongen, med Førre/Neste under tabellen. Skal du rette mange, vel **Treng handarbeid** i filteret og trykk **Start gjennomgang**: eitt bilete om gongen i stor visning, snudd same veg som OCR-en las det, med OCR-teksten ved sida og ID-feltet i fokus. <kbd>Enter</kbd> går vidare, <kbd>Shift</kbd>+<kbd>Enter</kbd> tilbake, <kbd>Ctrl</kbd>+<kbd>S</kbd> lagrar, <kbd>Esc</kbd> lukkar. Appen varslar om ein ID ikkje passar mønsteret, eller om same ID er brukt på fleire bilete.
 3. **Køyr omdøyping**: vel ut-mappe, og om originalane skal **kopierast** (standard, dei blir verande) eller **flyttast**. Flytting innanfor same disk er ei namneendring i filsystemet: ho går på sekund og treng ingen ledig plass, noko som betyr mykje når kvart motiv er eit par på rundt 630 MB. Ligg ut-mappa på ein annan disk, blir filene kopierte og originalane sletta etterpå, og då kostar flyttinga like mykje som ei kopiering. Kjeldemappa må vere skrivbar for å flytte; er uttrekket skriveverna, seier appen det før han startar i staden for å feile på kvar einskild fil. Før noko blir skrive, viser appen kor mange som får nytt namn, kor mange som hamnar i `_manuell`, kor mange byte det gjeld, og eventuelle ID-kollisjonar, til stadfesting. Peikar rapporten på filer som ikkje finst, til dømes fordi ein nettverksdisk ikkje er kopla til, står det der òg. Så blir det sjekka at disken har plass, og køyringa stoppar før fyrste fila dersom han ikkje har det. Undervegs kan du avbryte, og då stoppar appen mellom to filer, aldri midt i ei. Ei fil som ikkje lèt seg kopiere stoppar ikkje resten; ho blir talt som feil og hamnar i `uidentifiserte.csv` med grunnen.
 
@@ -193,13 +193,18 @@ OCR-ar alle bilete under ei mappe og skriv ein CSV-rapport med føreslåtte namn
 
 Ved sida av rapporten blir det skrive ei eiga liste over bilete der OCR-en ikkje fann ein gyldig ID: `<rapportnamn>_uidentifiserte.csv`. Kvar rad har `original_jpg`, `matched_tiff`, `status` og ei **grunngjeving** (statisk forklaring ut frå feiltypen, med systemfeilen lagt til ved tekniske feil).
 
+Lesinga går mappe for mappe, og filene blir para på filnamn før noko blir opna. Det gir to ting utover sjølve OCR-en:
+
+- **TIFF-ar utan JPEG blir funne.** Ein `.tif` som ikkje har ein `.jpg` med same filnamn kan ikkje få ein lesen ID, for motivet ligg i JPEG-en. Han blir difor aldri gissa på, men han får ei rad med status `manuell_tiff_utan_jpg` og blir med til `_manuell` i steg 3. Utan dette ville fila vore usynleg for appen og blitt liggjande att i kjeldemappa, noko som er kritisk når brukaren har vald å flytte.
+- **Mapperekneskap**: `<rapportnamn>_mapper.csv` med ei rad per mappe: kor mange `.jpg` og `.tif` som låg der, kor mange par, kor mange TIFF-ar utan JPEG, kor mange JPEG-ar utan TIFF, kor mange rader mappa fekk, og `gjer_opp` som er `ja` når kvar fil er gjord greie for. Med hundrevis av mapper kan ingen kontrollere tolv tusen rader, men ein kan kontrollere dei mappene der `gjer_opp` er `nei`.
+
 ### 2. Sjå over rapporten
 
 Opne `report.csv` (t.d. i Excel). Rapporten blir skriven med semikolon som skiljeteikn og med BOM, altså `utf-8-sig`, slik at Excel på norsk Windows deler kolonnane rett og viser æ, ø og å. Rapportar frå eldre køyringar, som brukte komma, blir framleis lesne. Kolonnar:
 
 | kolonne | tyding |
 | --- | --- |
-| `original_jpg` | full sti til kjeldefila |
+| `original_jpg` | full sti til kjeldefila, altså JPEG-en, eller `.tif`-fila for ein TIFF utan JPEG |
 | `ocr_text` | rå OCR-tekst (avkorta) for innsyn |
 | `rotation` | rotasjonen som gav treff (0/90/270) |
 | `raw_id` | ID-en slik han stod i motivet |
@@ -207,7 +212,7 @@ Opne `report.csv` (t.d. i Excel). Rapporten blir skriven med semikolon som skilj
 | `new_basename` | filnamn utan etternamn |
 | `year` | årstal utleidd frå Foto-ID |
 | `matched_tiff` | `.tif` som høyrer til |
-| `status` | `ok`, `manuell_ingen_id`, `manuell_uventa_tal` eller `feil` |
+| `status` | `ok`, `manuell_ingen_id`, `manuell_uventa_tal`, `manuell_tiff_utan_jpg` eller `feil` |
 | `error` | merknad ved manuell/feil |
 
 Du kan rette `new_basename`/`foto_id` manuelt og sette `status` til `ok` der du har fylt inn eit namn. `execute` les den redigerte fila. Steg 2 i appen gjer det same, men viser biletet ved sida av feltet og varslar om ID-ar som ikkje passar mønsteret eller er brukte fleire gonger.

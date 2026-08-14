@@ -20,22 +20,25 @@ from nbrenamer.core import (
     DEFAULT_ROTATIONS,
     STATUS_ERROR,
     STATUS_OK,
+    STATUS_ORPHAN_TIFF,
     STATUS_REVIEW_NO_ID,
     STATUS_REVIEW_UNEXPECTED,
     OcrConfig,
     build_engine,
     classify,
-    find_jpgs,
     find_matching_tiff,
     ocr_image,
     reason_for,
 )
 from nbrenamer import pipeline
+from nbrenamer.folders import count_work
 from nbrenamer.report import (
+    folder_list_path_for,
     manual_list_path_for,
     open_report_writer,
     read_processed,
     read_rows,
+    write_folder_list,
     write_manual_list,
 )
 
@@ -45,15 +48,16 @@ def cmd_discover(args):
     report = Path(args.report)
     tiff_dir = Path(args.tiff_dir) if args.tiff_dir else None
 
-    jpgs = find_jpgs(input_dir)
-    if not jpgs:
-        print(f"Fann ingen .jpg under {input_dir}", file=sys.stderr)
+    processed = frozenset(read_processed(report)) if args.resume else frozenset()
+    n_jpg, n_orphan, n_todo = count_work(input_dir, tiff_dir, done=processed)
+    if not n_jpg and not n_orphan:
+        print(f"Fann ingen .jpg eller .tif under {input_dir}", file=sys.stderr)
         return 1
 
-    processed = read_processed(report) if args.resume else set()
-    todo = [p for p in jpgs if str(p) not in processed]
-    print(f"{len(jpgs)} jpg totalt, {len(processed)} alt handsama, {len(todo)} att å gjere.", flush=True)
-    if not todo:
+    print(f"{n_jpg} jpg totalt, {len(processed)} alt handsama, {n_todo} att å gjere.", flush=True)
+    if n_orphan:
+        print(f"{n_orphan} tiff utan jpg. Dei blir ikkje lesne, men dei får rad.", flush=True)
+    if not n_todo:
         print("Ingenting å gjere.")
         return 0
 
@@ -63,10 +67,13 @@ def cmd_discover(args):
         workers = 1
 
     f, writer = open_report_writer(report, args.resume)
-    counts = {STATUS_OK: 0, STATUS_REVIEW_NO_ID: 0, STATUS_REVIEW_UNEXPECTED: 0, STATUS_ERROR: 0}
+    counts: dict[str, int] = {}
     manual_rows: list[dict] = []
+    done = 0
 
-    def on_row(row: dict, i: int) -> None:
+    def on_row(row: dict) -> None:
+        nonlocal done
+        done += 1
         writer.writerow(row)
         f.flush()
         counts[row["status"]] = counts.get(row["status"], 0) + 1
@@ -79,36 +86,46 @@ def cmd_discover(args):
                     "grunngjeving": reason_for(row["status"], row["error"]),
                 }
             )
-        print(f"[{i}/{len(todo)}] {Path(row['original_jpg']).name}: {row['status']} {row['foto_id']}", flush=True)
+        print(f"[{done}/{n_todo}] {Path(row['original_jpg']).name}: {row['status']} {row['foto_id']}", flush=True)
 
     init_primitives = (
         args.id_pattern, args.max_dim, args.rotations, args.autocontrast, args.prefix, args.device, args.gpu_id,
     )
+    cfg = OcrConfig.make(args.id_pattern, args.max_dim, args.rotations, args.autocontrast, args.prefix)
+    engine = None
+    if workers <= 1:
+        engine, actual = build_engine(args.device, args.gpu_id)
+        print(f"OCR-motor: {actual.upper()}", flush=True)
+
     t0 = time.perf_counter()
     try:
-        if workers <= 1:
-            engine, actual = build_engine(args.device, args.gpu_id)
-            print(f"OCR-motor: {actual.upper()}", flush=True)
-            cfg = OcrConfig.make(args.id_pattern, args.max_dim, args.rotations, args.autocontrast, args.prefix)
-            pipeline.run_discover_sequential(todo, engine, tiff_dir, cfg, on_row)
-        else:
-            pipeline.run_discover_multiprocess(todo, tiff_dir, init_primitives, on_row, workers)
+        folder_rows = pipeline.run_discover(
+            input_dir, tiff_dir, cfg, on_row,
+            engine=engine, workers=workers, init_primitives=init_primitives, done=processed,
+        )
     finally:
         f.close()
 
     manual_list = manual_list_path_for(report)
     write_manual_list(manual_list, manual_rows)
+    folder_list = folder_list_path_for(report)
+    write_folder_list(folder_list, folder_rows)
+    unbalanced = [r for r in folder_rows if r["gjer_opp"] == "nei"]
 
     dt = time.perf_counter() - t0
     print("\n" + "=" * 60)
-    print(f"Ferdig på {dt:.1f}s ({dt / max(len(todo), 1):.2f}s/bilete).")
+    print(f"Ferdig på {dt:.1f}s ({dt / max(n_todo, 1):.2f}s/bilete).")
     print(f"  ok:                 {counts.get(STATUS_OK, 0)}")
     print(f"  manuell (ingen id): {counts.get(STATUS_REVIEW_NO_ID, 0)}")
     print(f"  manuell (uventa):   {counts.get(STATUS_REVIEW_UNEXPECTED, 0)}")
+    print(f"  tiff utan jpg:      {counts.get(STATUS_ORPHAN_TIFF, 0)}")
     print(f"  feil:               {counts.get(STATUS_ERROR, 0)}")
     print(f"Rapport: {report}")
     if manual_rows:
         print(f"Liste over uidentifiserte: {manual_list} ({len(manual_rows)} bilete)")
+    print(f"Mapperekneskap: {folder_list} ({len(folder_rows)} mapper)")
+    if unbalanced:
+        print(f"  {len(unbalanced)} mappe(r) går ikkje opp. Sjå kolonnen gjer_opp.")
     return 0
 
 

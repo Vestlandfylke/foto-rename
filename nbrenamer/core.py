@@ -22,6 +22,7 @@ JPG_SUFFIXES = (".jpg", ".jpeg")
 STATUS_OK = "ok"
 STATUS_REVIEW_NO_ID = "manuell_ingen_id"
 STATUS_REVIEW_UNEXPECTED = "manuell_uventa_tal"
+STATUS_ORPHAN_TIFF = "manuell_tiff_utan_jpg"
 STATUS_ERROR = "feil"
 
 REASONS = {
@@ -34,6 +35,10 @@ REASONS = {
         "ID funnen, men taldelen byrjar ikkje på 8 eller 9. Må vurderast manuelt "
         "(kan vere eit avvikande nummer eller feillesing)."
     ),
+    STATUS_ORPHAN_TIFF: (
+        "TIFF-en har ingen JPEG med same filnamn, så ingen ID kunne lesast. Fila blir "
+        "aldri gissa på, men ho blir teken med slik at ho ikkje blir liggjande att."
+    ),
     STATUS_ERROR: "Teknisk feil under prosessering av fila.",
 }
 
@@ -44,6 +49,7 @@ STATUS_LABELS = {
     STATUS_OK: "Klar",
     STATUS_REVIEW_NO_ID: "Manglar ID",
     STATUS_REVIEW_UNEXPECTED: "Uventa tal",
+    STATUS_ORPHAN_TIFF: "TIFF utan JPEG",
     STATUS_ERROR: "Feil",
 }
 
@@ -53,6 +59,9 @@ STATUS_LABELS = {
 FOTO_ID_PATTERN = rf"^{DEFAULT_PREFIX}-\d{{6,8}}\.\d{{2,4}}$"
 FOTO_ID_EXAMPLE = f"{DEFAULT_PREFIX}-1994207.0007"
 
+# `original_jpg` er kjeldefila rada handlar om. For alt som er lese med OCR er det JPEG-en,
+# men ein TIFF utan JPEG-partnar får si eiga rad, og då står .tif-fila der. Namnet er behalde
+# fordi det er nøkkelen både i rapporten, i gjenopptakinga og i lagringa frå steg 2.
 CSV_FIELDS = [
     "original_jpg",
     "ocr_text",
@@ -67,6 +76,12 @@ CSV_FIELDS = [
 ]
 
 MANUAL_LIST_FIELDS = ["original_jpg", "matched_tiff", "status", "grunngjeving", "kopiert_til"]
+
+# Rekneskapen per mappe. Med fleire hundre mapper i eit uttrekk kan ingen sjå gjennom tolv
+# tusen rader, men ein kan sjå gjennom dei mappene som ikkje går opp.
+FOLDER_LIST_FIELDS = [
+    "mappe", "jpg", "tiff", "par", "tiff_utan_jpg", "jpg_utan_tiff", "rader", "gjer_opp", "merknad",
+]
 
 
 def reason_for(status: str, error: str = "") -> str:
@@ -237,12 +252,18 @@ def find_matching_tiff(jpg: Path, tiff_dir: Optional[Path]) -> Optional[Path]:
     return None
 
 
-def process_one(engine, jpg: Path, tiff_dir: Optional[Path], cfg: OcrConfig) -> dict:
-    """OCR-ar éi fil og returnerer ei ferdig rapport-rad (CSV_FIELDS)."""
+def process_one(engine, jpg: Path, cfg: OcrConfig, tiff: Optional[Path] = None) -> dict:
+    """
+    OCR-ar éi fil og returnerer ei ferdig rapport-rad (CSV_FIELDS).
+
+    `tiff` er partnaren, eller None om JPEG-en ikkje har nokon. Paringa er gjort før me kjem
+    hit, av mappe-indekseringa i folders.py, som kjenner heile mappa frå eitt katalogoppslag.
+    Å slå det opp per bilete i staden ville kosta fire filsystem-oppslag for kvar fil, og det
+    er ikkje gratis når materialet ligg på ein nettverksdisk.
+    """
     try:
         outcome = ocr_image(engine, jpg, cfg)
         cls = classify(outcome, cfg.prefix)
-        tiff = find_matching_tiff(jpg, tiff_dir)
         return {
             "original_jpg": str(jpg),
             "ocr_text": outcome.text[:500].replace("\n", " "),
@@ -264,11 +285,34 @@ def process_one(engine, jpg: Path, tiff_dir: Optional[Path], cfg: OcrConfig) -> 
             "foto_id": "",
             "new_basename": "",
             "year": "",
-            "matched_tiff": "",
+            # Partnaren blir med sjølv om lesinga feila. Utan han ville TIFF-en blitt
+            # liggjande att i kjeldemappa medan JPEG-en gjekk til _manuell.
+            "matched_tiff": str(tiff) if tiff else "",
             "status": STATUS_ERROR,
             "error": f"{type(e).__name__}: {e}",
         }
 
 
-def find_jpgs(input_dir: Path) -> list[Path]:
-    return sorted(p for p in input_dir.rglob("*") if p.suffix.lower() in JPG_SUFFIXES)
+def orphan_tiff_row(tiff: Path) -> dict:
+    """
+    Rapport-rad for ein TIFF som ikkje har nokon JPEG med same filnamn.
+
+    Han blir aldri OCR-a: utan motivet finst det ingen ID å lese, og å gissa på eit namn
+    ville vore verre enn å la mennesket ta det. Men han får ei rad, slik at han blir med i
+    steg 3 og hamnar i `_manuell` med originalnamnet i staden for å bli liggjande att i
+    kjeldemappa. Det siste er heile poenget når brukaren har vald å flytte.
+    """
+    return {
+        "original_jpg": str(tiff),
+        "ocr_text": "",
+        "rotation": "",
+        "raw_id": "",
+        "foto_id": "",
+        "new_basename": "",
+        "year": "",
+        "matched_tiff": "",
+        "status": STATUS_ORPHAN_TIFF,
+        "error": "",
+    }
+
+

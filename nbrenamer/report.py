@@ -6,7 +6,7 @@ import csv
 import os
 from pathlib import Path
 
-from .core import CSV_FIELDS, MANUAL_LIST_FIELDS
+from .core import CSV_FIELDS, FOLDER_LIST_FIELDS, MANUAL_LIST_FIELDS
 
 # Rapportane blir opna i Excel, og Excel på norsk Windows deler kolonnar på semikolon.
 # Han les fila som UTF-8 berre når ho startar med eit BOM, som "utf-8-sig" legg inn;
@@ -96,3 +96,22 @@ def write_manual_list(path: Path, rows: list[dict]) -> None:
 
 def manual_list_path_for(report: Path) -> Path:
     return report.with_name(report.stem + "_uidentifiserte.csv")
+
+
+def write_folder_list(path: Path, rows: list[dict]) -> None:
+    """
+    Skriv rekneskapen per mappe: kor mange filer som låg der, og kor mange rader dei fekk.
+
+    Dette er lista arkivaren kan bruke til å slå fast at ingenting er gløymt. Mapper der
+    `gjer_opp` er «nei» er dei einaste ein må sjå på.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding=ENCODING, newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=FOLDER_LIST_FIELDS, delimiter=DELIMITER)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({k: row.get(k, "") for k in FOLDER_LIST_FIELDS})
+
+
+def folder_list_path_for(report: Path) -> Path:
+    return report.with_name(report.stem + "_mapper.csv")

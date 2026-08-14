@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import io
 import os
 import string
@@ -19,7 +20,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import core, pipeline
+from . import core, folders, pipeline
 from .core import (
     DEFAULT_ID_PATTERN,
     DEFAULT_MAX_DIM,
@@ -27,15 +28,16 @@ from .core import (
     STATUS_OK,
     OcrConfig,
     build_engine,
-    find_jpgs,
     gpu_available,
     reason_for,
 )
 from .report import (
+    folder_list_path_for,
     manual_list_path_for,
     open_report_writer,
     read_processed,
     read_rows,
+    write_folder_list,
     write_manual_list,
     write_rows,
 )
@@ -137,17 +139,20 @@ class SaveReq(BaseModel):
 # ----------------------------------------------------------------------------
 def _run_discover(req: DiscoverReq):
     report = Path(req.report)
+    input_dir = Path(req.input_dir)
     tiff_dir = Path(req.tiff_dir) if req.tiff_dir else None
     try:
-        jpgs = find_jpgs(Path(req.input_dir))
-        processed = read_processed(report) if req.resume else set()
-        todo = [p for p in jpgs if str(p) not in processed]
+        processed = frozenset(read_processed(report)) if req.resume else frozenset()
+        # Katalog-gjennomgangen blir gjord to gonger: fyrst for å vite kor mange filer det er,
+        # så for å arbeide. Framdrifta må ha eit totaltal for å kunne vise tid som står att,
+        # og ein gjennomgang utan å opne filer kostar sekund mot timar for sjølve lesinga.
+        n_jpg, n_orphan, n_todo = folders.count_work(input_dir, tiff_dir, done=processed)
 
         with _job_lock:
-            _job.total = len(todo)
-            _job.message = f"{len(jpgs)} jpg totalt, {len(todo)} att å gjere"
+            _job.total = n_todo
+            _job.message = f"{n_jpg} jpg totalt, {n_todo} att å gjere"
 
-        if not todo:
+        if not n_todo:
             _finish_job("done", "Ingenting å gjere")
             return
 
@@ -158,8 +163,10 @@ def _run_discover(req: DiscoverReq):
         cfg = OcrConfig.make(req.id_pattern, req.max_dim, req.rotations, req.autocontrast, req.prefix)
         f, writer = open_report_writer(report, req.resume)
         manual_rows: list[dict] = []
+        done = 0
 
-        def on_row(row: dict, i: int):
+        def on_row(row: dict):
+            nonlocal done
             writer.writerow(row)
             f.flush()
             if row["status"] != STATUS_OK:
@@ -171,24 +178,39 @@ def _run_discover(req: DiscoverReq):
                         "grunngjeving": reason_for(row["status"], row["error"]),
                     }
                 )
+            done += 1
             with _job_lock:
-                _job.processed = i
+                _job.processed = done
                 _job.current = Path(row["original_jpg"]).name
                 _job.counts[row["status"]] = _job.counts.get(row["status"], 0) + 1
 
         try:
-            pipeline.run_discover_sequential(todo, engine, tiff_dir, cfg, on_row, should_stop=_cancel.is_set)
+            folder_rows = pipeline.run_discover(
+                input_dir, tiff_dir, cfg, on_row,
+                engine=engine, done=processed, should_stop=_cancel.is_set,
+            )
         finally:
             f.close()
 
         manual_list = manual_list_path_for(report)
         write_manual_list(manual_list, manual_rows)
+        folder_list = folder_list_path_for(report)
+        write_folder_list(folder_list, folder_rows)
+        unbalanced = sum(1 for r in folder_rows if r["gjer_opp"] == "nei")
 
         state = "cancelled" if _cancel.is_set() else "done"
         _finish_job(
             state,
             f"Rapport: {report}",
-            result={"report": str(report), "manual_list": str(manual_list), "manual": len(manual_rows)},
+            result={
+                "report": str(report),
+                "manual_list": str(manual_list),
+                "manual": len(manual_rows),
+                "folder_list": str(folder_list),
+                "folders": len(folder_rows),
+                "folders_unbalanced": unbalanced,
+                "orphan_tiffs": n_orphan,
+            },
         )
     except Exception as e:  # noqa: BLE001
         _finish_job("error", f"{type(e).__name__}: {e}")
@@ -672,6 +694,13 @@ def api_browse(path: Optional[str] = None):
     return {"path": str(p), "parent": parent, "is_root": False, "drives": drives, "dirs": dirs}
 
 
+# Ein ukomprimert arkiv-TIFF på 114 megapiksel toppar på nær 600 MB medan han blir dekoda, og
+# JPEG-snarvegen i load_base_image (draft) finst ikkje for TIFF. Rader for TIFF-ar utan JPEG
+# gjer at tabellen kan be om fleire slike samstundes, og då må dei stå i kø: to på ein gong er
+# ein minnetopp me toler, ti er det ikkje.
+_big_decode = threading.Semaphore(2)
+
+
 @app.get("/api/thumb")
 def api_thumb(path: str, max_dim: int = 1000, rotate: int = 0):
     """
@@ -682,12 +711,14 @@ def api_thumb(path: str, max_dim: int = 1000, rotate: int = 0):
     p = Path(path)
     if not p.is_file():
         raise HTTPException(status_code=404, detail="Fila finst ikkje")
+    queue = _big_decode if p.suffix.lower() in core.TIFF_SUFFIXES else contextlib.nullcontext()
     try:
-        img = core.load_base_image(p, max_dim, autocontrast=False)
-        if rotate % 360:
-            img = img.rotate(rotate, expand=True)
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=85)
+        with queue:
+            img = core.load_base_image(p, max_dim, autocontrast=False)
+            if rotate % 360:
+                img = img.rotate(rotate, expand=True)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=85)
         buf.seek(0)
         return StreamingResponse(buf, media_type="image/jpeg")
     except Exception as e:  # noqa: BLE001
