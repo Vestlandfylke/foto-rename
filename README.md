@@ -232,6 +232,8 @@ Les rapporten og legg filene i utmappa:
 - I tillegg skriv `execute` ei samla liste `_manuell\uidentifiserte.csv` over alle bilete som ikkje kunne namngivast, med grunngjeving og kva mappe dei blei kopierte til. Filer som kolliderte eller ikkje lét seg kopiere står òg der, med grunnen, slik at ingenting forsvinn utan spor.
 - Det blir rekna ut kor mykje plass som trengst før noko blir skrive, og køyringa stoppar med ein gong dersom disken ikkje har rom. Eit skann er eit par på rundt 630 MB, så nokre tusen bilete blir fort fleire terabyte. Sjekken blir hoppa over berre når flyttinga går innanfor eitt og same volum, for då blir ingen data kopierte.
 - Éi fil som ikkje lèt seg kopiere, til dømes fordi ho er open i eit anna program eller er borte, blir talt som feil og hoppa over. Resten av køyringa held fram.
+- Storleiken blir samanlikna etter kvar kopi. Ein kopi som stoppar midtvegs, typisk fordi ein nettverksdisk fell ut, gir ikkje alltid ei feilmelding, men ei fil som ser ferdig ut og er halv. Slike rader blir melde som feil med ei forklaring. Den avkorta fila blir ikkje sletta, for ved flytting på tvers av diskar er originalen alt borte.
+- TIFF-en blir følgd opp for seg. Kjem han ikkje på plass, fordi han kolliderte, vart avkorta eller ikkje finst lenger, står det som `TIFF-ar som ikkje kom med` i oppsummeringa, sjølv om JPEG-en fekk nytt namn. TIFF-en er den store halvparten av paret, så ei rad utan han er ikkje ferdig.
 
 ## Teste éi fil
 

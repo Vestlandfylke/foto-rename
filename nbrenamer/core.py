@@ -10,7 +10,16 @@ from typing import Optional
 import numpy as np
 from PIL import Image, ImageOps
 
+# Pillow si eiga grense er slått av fordi ho er meint mot nedlasta bilete og ropar varsel på
+# heilt vanlege arkivskann. I staden har me vår eiga grense under, som gir ei forståeleg melding
+# og ei rad i rapporten i staden for eit varsel i ein logg ingen les.
 Image.MAX_IMAGE_PIXELS = None
+
+# Eit NB-skann er 92 til 114 megapikslar. Grensa er sett godt over det verkelege materialet, så
+# ho slår ikkje inn på noko normalt. Poenget er ei fil med øydelagd hovud som hevdar absurde mål:
+# utan grensa freistar Pillow å reservere minne for heile biletet, og då kan operativsystemet
+# ta prosessen. Ei fil skal bli ei feilrad, ikkje ein død lesejobb.
+MAX_PIXELS = 300_000_000
 
 DEFAULT_ID_PATTERN = r"SFF[Ff]?\s*[-\u2013]?\s*(\d{4,6})\s*[.,]\s*(\d{2,4})"
 DEFAULT_ROTATIONS = "0,90,270"
@@ -158,9 +167,20 @@ def build_engine(device: str = "gpu", gpu_id: int = 0):
     return RapidOCR(), "cpu"
 
 
+class ImageTooLarge(ValueError):
+    """Biletet er så stort at me nektar å dekode det. Sjå MAX_PIXELS."""
+
+
 def load_base_image(path: Path, max_dim: int, autocontrast: bool) -> Image.Image:
     """Opnar biletet, gjer eventuelt autokontrast, og skalerer ned til max_dim."""
     img = Image.open(path)
+    pixels = img.size[0] * img.size[1]
+    if pixels > MAX_PIXELS:
+        img.close()
+        raise ImageTooLarge(
+            f"{img.size[0]}x{img.size[1]} = {pixels / 1e6:.0f} megapikslar, over grensa på "
+            f"{MAX_PIXELS / 1e6:.0f}. Fila er truleg øydelagd. Sjekk henne manuelt."
+        )
     # NB-skanna er på rundt 92 megapikslar, og me treng berre max_dim. draft() ber libjpeg
     # dekode i 1/2, 1/4 eller 1/8 med ein gong, alltid til noko som er minst max_dim, så
     # LANCZOS-skaleringa under gjer resten. Det er fire gonger raskare med same OCR-treff.

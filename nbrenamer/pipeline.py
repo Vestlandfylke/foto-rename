@@ -218,14 +218,24 @@ def folder_account(index: FolderIndex, input_dir: Path, rows_written: int,
 # execute
 # ----------------------------------------------------------------------------
 def _place_file(src: Path, dest: Path, move: bool, overwrite: bool) -> str:
+    """
+    Legg éi fil på plass. Returnerer "ok", "konflikt" eller "avkorta".
+
+    Storleiken blir samanlikna etterpå. Ein kopi som stoppar midtvegs, typisk fordi
+    nettverksdisken fell ut, gir ikkje alltid eit unntak: han gir ei fil som ser ferdig ut og er
+    halv. På ein 650 MB TIFF er det ikkje noko nokon oppdagar med auget. Den avkorta fila blir
+    med vilje ikkje sletta: ved flytting på tvers av volum er originalen alt borte, og då er ei
+    halv fil betre enn inga fil. Rada blir meld som feil, slik at eit menneske ser på henne.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and not overwrite:
         return "konflikt"
+    size = src.stat().st_size
     if move:
         shutil.move(str(src), str(dest))
     else:
         shutil.copy2(str(src), str(dest))
-    return "ok"
+    return "ok" if dest.stat().st_size == size else "avkorta"
 
 
 def source_paths(rows: list[dict]) -> list[Path]:
@@ -344,6 +354,39 @@ def _manual_note(row: dict, reason: str, copied_to: str) -> dict:
     }
 
 
+def _truncated_note(name: str, folder: Path) -> str:
+    return (f"{name} i {folder} fekk ikkje same storleik som originalen. Kopieringa stoppa truleg "
+            "midtvegs. Fila er ikkje sletta, men ho må kontrollerast før du stoler på henne.")
+
+
+def _place_tiff(row: dict, tiff: Optional[Path], folder: Path, name: str, move: bool,
+                overwrite: bool, stats: dict, manual_rows: list[dict]) -> None:
+    """
+    Legg TIFF-en ved sida av JPEG-en, og meld frå dersom han ikkje kom på plass.
+
+    TIFF-en er den store halvparten av paret, rundt 630 MB av 650. Tidlegare vart resultatet av
+    denne kopieringa kasta, så ein kollisjon eller ein avkorta kopi på arkivmasteren gjekk stille
+    gjennom medan rada vart meld som omdøypt. Ei rad som manglar TIFF-en sin er ikkje i orden,
+    same kor fin JPEG-en er.
+    """
+    if not tiff:
+        return
+    if not tiff.exists():
+        stats["tiff_feil"] += 1
+        manual_rows.append(_manual_note(
+            row, f"TIFF-en rapporten peikar på finst ikkje: {tiff}", ""))
+        return
+    res = _place_file(tiff, folder / name, move, overwrite)
+    if res == "ok":
+        return
+    stats["tiff_feil"] += 1
+    if res == "konflikt":
+        manual_rows.append(_manual_note(
+            row, f"{name} låg alt i {folder}, så TIFF-en vart ikkje kopiert.", ""))
+    else:
+        manual_rows.append(_manual_note(row, _truncated_note(name, folder), str(folder)))
+
+
 def will_be_renamed(row: dict) -> bool:
     """
     Sant når rada får nytt namn i ut-mappa. Alt anna hamnar i _manuell med originalnamnet.
@@ -365,7 +408,10 @@ def execute_rows(
     """Kopierer/omdøyper etter rapport-radene. Returnerer statistikk og sti til manuell-lista."""
     output_dir = Path(output_dir)
     manual_root = output_dir / "_manuell"
-    stats = {"omdøypt": 0, "manuell": 0, "konflikt": 0, "feil": 0}
+    # omdøypt, manuell, konflikt og feil er talde per rad og summerer til talet på rader me kom
+    # gjennom. tiff_feil står utanfor: han tel TIFF-ar som ikkje kom på plass sjølv om JPEG-en
+    # gjorde det, og ei rad kan ikkje vere både i orden og ikkje.
+    stats = {"omdøypt": 0, "manuell": 0, "konflikt": 0, "feil": 0, "tiff_feil": 0}
     manual_rows: list[dict] = []
     total = len(rows)
 
@@ -391,9 +437,12 @@ def execute_rows(
                     manual_rows.append(
                         _manual_note(row, f"{name} låg alt i {target_dir}, så fila vart ikkje kopiert.", "")
                     )
+                elif res == "avkorta":
+                    stats["feil"] += 1
+                    manual_rows.append(_manual_note(row, _truncated_note(name, target_dir), str(target_dir)))
                 else:
-                    if tiff and tiff.exists():
-                        _place_file(tiff, target_dir / (base + tiff.suffix.lower()), move, overwrite)
+                    _place_tiff(row, tiff, target_dir, base + tiff.suffix.lower() if tiff else "",
+                                move, overwrite, stats, manual_rows)
                     stats["omdøypt"] += 1
             else:
                 sub = manual_root / status
@@ -403,9 +452,12 @@ def execute_rows(
                     manual_rows.append(
                         _manual_note(row, f"{jpg.name} låg alt i {sub}, så fila vart ikkje kopiert.", "")
                     )
+                elif res == "avkorta":
+                    stats["feil"] += 1
+                    manual_rows.append(_manual_note(row, _truncated_note(jpg.name, sub), str(sub)))
                 else:
-                    if tiff and tiff.exists():
-                        _place_file(tiff, sub / tiff.name, move, overwrite)
+                    _place_tiff(row, tiff, sub, tiff.name if tiff else "",
+                                move, overwrite, stats, manual_rows)
                     stats["manuell"] += 1
                     manual_rows.append(
                         _manual_note(row, reason_for(status, row.get("error", "")), str(sub))

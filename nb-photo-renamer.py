@@ -170,6 +170,8 @@ def cmd_execute(args):
     print(f"Til manuell mappe:  {stats['manuell']}")
     print(f"Konfliktar:         {stats['konflikt']}")
     print(f"Feil:               {stats['feil']}")
+    if stats.get("tiff_feil"):
+        print(f"TIFF-ar utan plass: {stats['tiff_feil']} (jpg-en kom med, tif-en ikkje)")
     print(f"Utdata i:           {args.output_dir}")
     if stats.get("manual_list"):
         print(f"Liste over uidentifiserte: {stats['manual_list']}")
