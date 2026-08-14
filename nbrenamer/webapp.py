@@ -184,10 +184,15 @@ def _run_discover(req: DiscoverReq):
                 _job.current = Path(row["original_jpg"]).name
                 _job.counts[row["status"]] = _job.counts.get(row["status"], 0) + 1
 
+        def on_folder(account: dict):
+            if account["gjer_opp"] == "nei":
+                with _job_lock:
+                    _job.message = f"Mappa {account['mappe']} går ikkje opp: {account['merknad']}"
+
         try:
             folder_rows = pipeline.run_discover(
                 input_dir, tiff_dir, cfg, on_row,
-                engine=engine, done=processed, should_stop=_cancel.is_set,
+                engine=engine, done=processed, should_stop=_cancel.is_set, on_folder=on_folder,
             )
         finally:
             f.close()

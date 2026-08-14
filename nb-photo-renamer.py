@@ -97,11 +97,16 @@ def cmd_discover(args):
         engine, actual = build_engine(args.device, args.gpu_id)
         print(f"OCR-motor: {actual.upper()}", flush=True)
 
+    def on_folder(account: dict) -> None:
+        if account["gjer_opp"] == "nei":
+            print(f"  ADVARSEL mappa {account['mappe']} går ikkje opp: {account['merknad']}", flush=True)
+
     t0 = time.perf_counter()
     try:
         folder_rows = pipeline.run_discover(
             input_dir, tiff_dir, cfg, on_row,
             engine=engine, workers=workers, init_primitives=init_primitives, done=processed,
+            on_folder=on_folder,
         )
     finally:
         f.close()

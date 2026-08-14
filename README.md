@@ -187,7 +187,7 @@ OCR-ar alle bilete under ei mappe og skriv ein CSV-rapport med føreslåtte namn
 .\run-nb-renamer.ps1 discover --input-dir "D:\sti\til\nb-bilete" --report report.csv --workers 4
 ```
 
-- `--workers` styrer talet på parallelle prosessar. Sett det til omtrent halvparten av CPU-kjernane for best gjennomstrøyming.
+- `--workers` styrer talet på parallelle prosessar. Sett det til omtrent halvparten av CPU-kjernane for best gjennomstrøyming. Arbeidarane blir bytte ut etter 200 filer, fordi OCR-motoren veks i minnebruk over ei lang køyring. Døyr ein arbeidar likevel, til dømes fordi operativsystemet tok han for minnebruk på ei uvanleg stor fil, blir mappa merkt i mapperekneskapen, bassenget bygd på nytt, og resten av køyringa held fram. Det som mangla kan hentast med `--resume`.
 - `--resume` hoppar over filer som alt står i rapporten, så du kan stoppe og halde fram.
 - `--tiff-dir` viss `.tif`-filene ligg i ei anna mappe enn `.jpg`-ane.
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -49,16 +50,6 @@ def run_discover_sequential(
         on_row(process_one(engine, jpg, cfg, tiff))
 
 
-def run_discover_multiprocess(
-    todo: list[JpgPair],
-    init_primitives: tuple,
-    on_row: Callable[[dict], None],
-    workers: int,
-) -> None:
-    with ProcessPoolExecutor(max_workers=workers, initializer=_worker_init, initargs=init_primitives) as ex:
-        _submit_folder(ex, todo, on_row)
-
-
 def _submit_folder(ex: ProcessPoolExecutor, todo: list[JpgPair],
                    on_row: Callable[[dict], None]) -> None:
     """
@@ -76,6 +67,12 @@ def _submit_folder(ex: ProcessPoolExecutor, todo: list[JpgPair],
         on_row(fut.result())
 
 
+# Kor mange filer ein arbeidar tek før han blir bytt ut. ONNX- og torch-sesjonar veks over
+# tusenvis av bilete, og utan resirkulering ber prosessen den veksten heile køyringa. Å byggje
+# motoren på nytt kostar nokre sekund, altså rundt éin prosent når kvar fil tek eit sekund.
+TASKS_PER_CHILD = 200
+
+
 def run_discover(
     input_dir: Path,
     tiff_dir: Optional[Path],
@@ -88,6 +85,8 @@ def run_discover(
     done: frozenset[str] = frozenset(),
     should_stop: Optional[Callable[[], bool]] = None,
     skip: tuple[Path, ...] = (),
+    on_folder: Optional[Callable[[dict], None]] = None,
+    tasks_per_child: int = TASKS_PER_CHILD,
 ) -> list[dict]:
     """
     Går gjennom inn-mappa mappe for mappe, les det som står att, og returnerer mapperekneskapen.
@@ -102,12 +101,16 @@ def run_discover(
     accounts: list[dict] = []
     used_tiffs: set[Path] = set()
 
+    def make_pool() -> ProcessPoolExecutor:
+        return ProcessPoolExecutor(max_workers=workers, initializer=_worker_init,
+                                   initargs=init_primitives,
+                                   max_tasks_per_child=tasks_per_child or None)
+
     pool = None
     if workers > 1:
         if init_primitives is None:
             raise ValueError("init_primitives må vere med når workers > 1")
-        pool = ProcessPoolExecutor(max_workers=workers, initializer=_worker_init,
-                                   initargs=init_primitives)
+        pool = make_pool()
     try:
         for index in walk_folders(input_dir, tiff_dir, skip):
             if stopped():
@@ -120,11 +123,24 @@ def run_discover(
             pairs = index.jpg_pairs()
             used_tiffs.update(tif for _jpg, tif in pairs if tif is not None)
             todo = [(jpg, tif) for jpg, tif in pairs if str(jpg) not in done]
-            if pool is not None:
-                _submit_folder(pool, todo, counter)
-            else:
-                run_discover_sequential(todo, engine, cfg, counter, should_stop)
-            accounts.append(folder_account(index, input_dir, counter.n - before, done))
+            note = ""
+            try:
+                if pool is not None:
+                    _submit_folder(pool, todo, counter)
+                else:
+                    run_discover_sequential(todo, engine, cfg, counter, should_stop)
+            except BrokenProcessPool as exc:
+                # Ein arbeidar døydde, typisk fordi operativsystemet tok han for minnebruk på
+                # ei uvanleg stor fil. Utan dette ville éi vond fil drepe heile køyringa og
+                # ta med seg dei mappene som stod att. Mappa blir merkt, bassenget bygd på
+                # nytt, og resten held fram. Det som mangla kan hentast med gjenopptaking.
+                note = f"Arbeidarprosess døydde: {type(exc).__name__}"
+                pool.shutdown(wait=False, cancel_futures=True)
+                pool = make_pool()
+            account = folder_account(index, input_dir, counter.n - before, done, note)
+            accounts.append(account)
+            if on_folder:
+                on_folder(account)
 
         if tiff_dir is not None and not stopped():
             # Ligg TIFF-ane i ei eiga mappe, kan ingen vite kven som er foreldrelaus før
@@ -162,7 +178,7 @@ class _RowCounter:
 
 
 def folder_account(index: FolderIndex, input_dir: Path, rows_written: int,
-                   done: frozenset[str]) -> dict:
+                   done: frozenset[str], note: str = "") -> dict:
     """
     Ei rad i mapperekneskapen: kva som låg i mappa, og kor mange rader ho fekk.
 
@@ -179,6 +195,8 @@ def folder_account(index: FolderIndex, input_dir: Path, rows_written: int,
     except ValueError:
         name = str(index.path)
     notes = []
+    if note:
+        notes.append(note)
     if index.orphan_tiff:
         notes.append(f"{len(index.orphan_tiff)} tiff utan jpg")
     if accounted != expected:
