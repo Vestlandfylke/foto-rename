@@ -318,6 +318,7 @@
   <section id="panel-execute" class="panel">
     <h2>Lag dei omdøypte bileta</h2>
     <p class="hint">No lagar appen bileta med dei nye namna i mappa du vel. Som standard blir originalane <b>kopierte</b>, så dei opphavlege filene blir verande urørte. Bilete utan identifisert namn hamnar i ei undermappe som heiter <code>_manuell\</code> med det opphavlege namnet.</p>
+    <p class="hint">Kvart motiv er eit par av JPEG og TIFF på rundt 630 MB til saman, så eit par tusen bilete blir fleire terabyte. Ligg originalane på same disk som ut-mappa, kan du velje <b>flytt</b> nedanfor: då byter filene berre namn og plass, og du slepp å vente på kopieringa.</p>
     <div class="field">
       <label>Oversikta frå steg 1 og 2</label>
       <div class="path-input">
@@ -333,6 +334,14 @@
         <button type="button" class="secondary browse" data-target="e_output">Bla gjennom ...</button>
       </div>
       <span class="help">Vel ei mappe der resultatet skal liggje. Helst ei tom eller ny mappe.</span>
+    </div>
+    <div class="field">
+      <label for="e_mode">Kva skal skje med originalane?</label>
+      <select id="e_mode">
+        <option value="copy">Kopier dei, originalane blir verande</option>
+        <option value="move">Flytt dei, originalane forsvinn frå kjeldemappa</option>
+      </select>
+      <span class="help" id="e_modeHelp">Kopiering er tryggast, men treng like mykje ledig plass som heile uttrekket.</span>
     </div>
     <div class="check-field">
       <label class="check-row"><input type="checkbox" id="e_year" checked /><span>Sorter i mapper per år</span></label>
@@ -1015,11 +1024,35 @@ $('r_save').onclick = saveReview;
 // ---- Execute ----
 const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
+function formatBytes(n) {
+  const einingar = ['B', 'KB', 'MB', 'GB'];
+  let tal = Number(n) || 0;
+  for (const eining of einingar) {
+    if (tal < 1024) return `${Math.round(tal)} ${eining}`;
+    tal /= 1024;
+  }
+  return `${tal.toFixed(1)} TB`;
+}
+
+function flyttar() { return $('e_mode').value === 'move'; }
+
+// Flytting innanfor éin disk er ei namneendring og går på sekund. På tvers av diskar er ho ei
+// kopiering med sletting etterpå, altså like tung som å kopiere. Brukaren skal vite kva av
+// delane han står i før han startar, ikkje etterpå.
+$('e_mode').onchange = () => {
+  $('e_modeHelp').textContent = flyttar()
+    ? 'Kjeldemappa må vere skrivbar. Ligg ho på same disk som ut-mappa, går flyttinga på sekund utan behov for ledig plass. Ligg ho på ein annan disk, blir filene kopierte og originalane sletta etterpå.'
+    : 'Kopiering er tryggast, men treng like mykje ledig plass som heile uttrekket.';
+};
+
 // Eitt klikk skriv tusenvis av filer til disk. Difor blir omfanget lagt fram fyrst, med tal
 // rekna av backenden etter same regel som køyringa sjølv brukar.
 async function confirmExecute() {
-  const s = await api('/api/report/summary?path=' + encodeURIComponent($('e_report').value.trim()));
+  const flytt = flyttar();
+  const s = await api('/api/report/summary?path=' + encodeURIComponent($('e_report').value.trim())
+    + '&output_dir=' + encodeURIComponent($('e_output').value.trim()));
   const mappe = esc($('e_output').value.trim());
+  const storleik = formatBytes(s.bytes);
   const punkt = [
     `<b>${s.renamed}</b> bilete får nytt namn og blir lagde i <code>${mappe}</code>` +
       ($('e_year').checked ? ', sortert i mapper per år.' : '.'),
@@ -1027,18 +1060,39 @@ async function confirmExecute() {
   if (s.manual) {
     punkt.push(`<b>${s.manual}</b> bilete hamnar i <code>_manuell\\</code> med originalnamnet.`);
   }
-  punkt.push('Originalane blir <b>kopierte</b>, ikkje flytta.');
+  if (!flytt) {
+    punkt.push(`Originalane blir <b>kopierte</b>, ikkje flytta. Kopien er på <b>${storleik}</b>, og ${formatBytes(s.free)} er ledig i ut-mappa.`);
+  } else if (s.same_volume) {
+    punkt.push(`Originalane blir <b>flytta</b> og forsvinn frå kjeldemappa. Alt ligg på same disk, så dei ${storleik} blir ikkje kopierte: filene byter berre namn og plass.`);
+  } else {
+    punkt.push(`Originalane blir <b>flytta</b> og forsvinn frå kjeldemappa. Ut-mappa ligg på ein annan disk, så ${storleik} må kopierast før originalane blir sletta.`);
+  }
   punkt.push($('e_over').checked
     ? 'Filer som alt finst i mappa <b>blir overskrivne</b>.'
     : 'Filer som alt finst i mappa blir <b>ikkje</b> rørte, men talde som konfliktar.');
   $('confirmList').innerHTML = punkt.map(p => `<li>${p}</li>`).join('');
+
+  const åtvaringar = [];
   const dubletter = s.duplicates.length;
-  $('confirmWarn').textContent = dubletter
-    ? (dubletter === 1
+  if (dubletter) {
+    åtvaringar.push((dubletter === 1
         ? `Foto-ID-en ${s.duplicates[0]} er brukt på fleire bilete, og dei vil kollidere. `
         : `${dubletter} Foto-ID-ar er brukte på fleire bilete, til dømes ${s.duplicates[0]}, og dei vil kollidere. `) +
-      'Gå tilbake til steg 2 om du vil rette det fyrst.'
-    : '';
+      'Gå tilbake til steg 2 om du vil rette det fyrst.');
+  }
+  // Backenden stoppar køyringa som manglar plass, men det er betre å seie frå medan brukaren
+  // framleis har dialogen open og kan velje ei anna mappe.
+  if ((!flytt || !s.same_volume) && s.bytes * 1.02 > s.free) {
+    åtvaringar.push(`Det er ikkje plass: ${storleik} skal skrivast, men berre ${formatBytes(s.free)} er ledig. Vel ei anna mappe eller frigjer plass.`);
+  }
+  // Ein rapport som peikar på ein nettverksdisk som ikkje er kopla til, ser elles ut som ei
+  // køyring på null byte, og alle filene ville blitt talde som feil ei og ei.
+  if (s.missing_sources) {
+    åtvaringar.push(s.missing_sources === 1
+      ? 'Fann ikkje éi av originalfilene rapporten peikar på. Sjekk at disken er kopla til.'
+      : `Fann ikkje ${s.missing_sources} av filene rapporten peikar på (JPEG og TIFF). Sjekk at disken er kopla til.`);
+  }
+  $('confirmWarn').textContent = åtvaringar.join(' ');
   return askConfirm();
 }
 
@@ -1067,7 +1121,7 @@ $('e_start').onclick = async () => {
     $('e_msg').className = 'msg error'; $('e_msg').textContent = e.message;
     return;
   }
-  const body = { report: $('e_report').value.trim(), output_dir: $('e_output').value.trim(), move: false, overwrite: $('e_over').checked, organize_by_year: $('e_year').checked };
+  const body = { report: $('e_report').value.trim(), output_dir: $('e_output').value.trim(), move: flyttar(), overwrite: $('e_over').checked, organize_by_year: $('e_year').checked };
   try {
     await api('/api/execute/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
     $('e_prog').style.display = 'block'; $('e_start').disabled = true;

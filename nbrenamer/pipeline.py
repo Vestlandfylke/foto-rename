@@ -2,6 +2,7 @@
 # ABOUTME: Tilbyr både sekvensiell køyring (web/GPU) og multiprosess (CPU-batch via CLI), med framdrifts-callback.
 from __future__ import annotations
 
+import os
 import shutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -71,19 +72,81 @@ def _place_file(src: Path, dest: Path, move: bool, overwrite: bool) -> str:
     return "ok"
 
 
-def _row_source_bytes(row: dict) -> int:
-    """Kor mange byte rada legg beslag på i ut-mappa. Filer som ikkje finst tel som null; dei
-    blir rapporterte som feil under sjølve køyringa."""
+def source_paths(rows: list[dict]) -> list[Path]:
+    """Alle filene radene peikar på, både JPEG og TIFF."""
+    out: list[Path] = []
+    for row in rows:
+        for key in ("original_jpg", "matched_tiff"):
+            value = row.get(key)
+            if value:
+                out.append(Path(value))
+    return out
+
+
+def source_stats(rows: list[dict]) -> tuple[int, int]:
+    """
+    (byte, filer som ikkje finst) for alt radene peikar på. Byte-talet er kor mykje plass
+    køyringa legg beslag på i ut-mappa; eit skann er eit par på rundt 630 MB, så talet blir fort
+    terabyte, og brukaren bør sjå det før han startar. Filer som ikkje finst tel som null byte og
+    blir rapporterte som feil under sjølve køyringa, men talet på dei er verdt å vise på førehand:
+    ein rapport som peikar på ein nettverksdisk som ikkje er kopla til, ser elles ut som ei
+    køyring utan data.
+    """
     total = 0
-    for key in ("original_jpg", "matched_tiff"):
-        value = row.get(key)
-        if not value:
-            continue
+    missing = 0
+    for path in source_paths(rows):
         try:
-            total += Path(value).stat().st_size
+            total += path.stat().st_size
         except OSError:
+            missing += 1
+    return total, missing
+
+
+def total_bytes(rows: list[dict]) -> int:
+    """Kor mykje data køyringa flyttar på."""
+    return source_stats(rows)[0]
+
+
+def _volume_of(path: Path) -> str:
+    """Volumet stien ligg på, altså `d:` eller `\\\\tenar\\utdeling`. Tom streng for relative stiar."""
+    return os.path.splitdrive(os.path.abspath(str(path)))[0].lower()
+
+
+def crosses_volume(rows: list[dict], output_dir: Path) -> bool:
+    """
+    Sant når minst éi kjeldefil ligg på eit anna volum enn ut-mappa. Ei flytting innanfor same
+    volum er berre ei namneendring i filsystemet: momentan, og utan behov for ledig plass. På
+    tvers av volum må operativsystemet kopiere heile fila og så slette originalen, og då kostar
+    flyttinga akkurat like mykje som ei kopiering.
+    """
+    target = _volume_of(output_dir)
+    return any(_volume_of(p) != target for p in source_paths(rows))
+
+
+def unwritable_source(rows: list[dict], sample: int = 20) -> Optional[Path]:
+    """
+    Fyrste kjeldemappa som ikkje lèt seg skrive i, eller None. Ei flytting krev skriveløyve der
+    filene ligg, og uttrekka frå NB kjem ofte på skriveverna område. Utan denne sjekken ville
+    kvar einaste fil feile for seg, og brukaren sitje att med tusen like feilmeldingar i staden
+    for éi som seier kva som er gale. Me prøver eit avgrensa utval mapper, sidan ei køyring kan
+    ha tusenvis av dei, og eit skriveverna uttrekk er skriveverna heile vegen.
+    """
+    seen: set[Path] = set()
+    for path in source_paths(rows):
+        folder = path.parent
+        if folder in seen:
             continue
-    return total
+        seen.add(folder)
+        probe = folder / ".nbr-skrivetest"
+        try:
+            with open(probe, "wb"):
+                pass
+            probe.unlink()
+        except OSError:
+            return folder
+        if len(seen) >= sample:
+            break
+    return None
 
 
 def human_bytes(size: float) -> str:
@@ -94,17 +157,23 @@ def human_bytes(size: float) -> str:
     return f"{size:.1f} TB"
 
 
+def free_space(output_dir: Path) -> int:
+    """Ledig plass der ut-mappa skal liggje. Mappa treng ikkje finnast enno; då spør me næraste
+    forelder som finst."""
+    probe = Path(output_dir)
+    while not probe.exists() and probe.parent != probe:
+        probe = probe.parent
+    return shutil.disk_usage(probe).free
+
+
 def missing_space(rows: list[dict], output_dir: Path, margin: float = 0.02) -> Optional[tuple[int, int]]:
     """
     Returnerer (trengst, ledig) når det ikkje er plass til kopien, elles None. Eit skann er
     eit par på rundt 630 MB, så nokre tusen bilete blir fleire terabyte. Går disken full
     midtvegs, står brukaren att med ei halv ut-mappe og ei avbroten køyring.
     """
-    needed = sum(_row_source_bytes(r) for r in rows)
-    probe = Path(output_dir)
-    while not probe.exists() and probe.parent != probe:
-        probe = probe.parent
-    free = shutil.disk_usage(probe).free
+    needed = total_bytes(rows)
+    free = free_space(output_dir)
     return (needed, free) if needed * (1 + margin) > free else None
 
 

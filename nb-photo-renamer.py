@@ -118,8 +118,15 @@ def cmd_execute(args):
         print(f"Rapportfila finst ikkje: {report}", file=sys.stderr)
         return 1
     rows = read_rows(report)
-    # Ei flytting på same disk treng ikkje ekstra plass, difor berre ved kopiering.
-    if not args.move:
+    # Ei flytting krev skriveløyve der originalane ligg, elles feilar kvar einaste fil for seg.
+    if args.move:
+        locked = pipeline.unwritable_source(rows)
+        if locked:
+            print(f"Kan ikkje flytte originalane: {locked} er skriveverna.", file=sys.stderr)
+            return 1
+    # Ei flytting innanfor same volum treng ikkje ekstra plass. På tvers av volum blir filene
+    # kopierte og så sletta, og då gjeld plasskravet som ved ei vanleg kopiering.
+    if not args.move or pipeline.crosses_volume(rows, Path(args.output_dir)):
         shortfall = pipeline.missing_space(rows, Path(args.output_dir))
         if shortfall:
             needed, free = shortfall

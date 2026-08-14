@@ -210,8 +210,21 @@ def _run_execute(req: ExecuteReq):
             _job.total = len(rows)
             _job.message = "Sjekkar at det er plass nok ..."
 
-        # Ei flytting på same disk treng ikkje ekstra plass, så då hoppar me over sjekken.
-        if not req.move:
+        # Ei flytting krev skriveløyve der originalane ligg. Uttrekk frå NB kjem ofte på
+        # skriveverna område, og då skal me seie det éin gong i staden for å feile per fil.
+        if req.move:
+            locked = pipeline.unwritable_source(rows)
+            if locked:
+                _finish_job(
+                    "error",
+                    f"Kan ikkje flytte originalane: {locked} er skriveverna. Vel kopiering, "
+                    "eller køyr mot ein kopi du har skriveløyve til.",
+                )
+                return
+
+        # Ei flytting innanfor same volum er berre ei namneendring, og treng ikkje ledig plass.
+        # Går ho på tvers av volum, blir filene kopierte og så sletta, og då gjeld kravet fullt ut.
+        if not req.move or pipeline.crosses_volume(rows, Path(req.output_dir)):
             shortfall = pipeline.missing_space(rows, Path(req.output_dir))
             if shortfall:
                 needed, free = shortfall
@@ -356,22 +369,32 @@ def api_report(
 
 
 @app.get("/api/report/summary")
-def api_report_summary(path: str):
+def api_report_summary(path: str, output_dir: Optional[str] = None):
     """
     Kva ei omdøyping av denne rapporten vil gjere. Blir vist til stadfesting før steg 3, der
-    éin knapp elles ville skrive tusenvis av filer utan at brukaren såg omfanget fyrst.
+    éin knapp elles ville skrive tusenvis av filer utan at brukaren såg omfanget fyrst. Med
+    `output_dir` seier svaret òg kor mange byte det gjeld, og om ei flytting ville gått
+    innanfor same volum. Eit foto er eit par på rundt 630 MB, så den skilnaden avgjer om
+    steg 3 tek sekund eller timar.
     """
     p = Path(path)
     if not p.is_file():
         raise HTTPException(status_code=404, detail="Rapporten finst ikkje")
     rows = read_rows(p)
     renamed = sum(1 for r in rows if pipeline.will_be_renamed(r))
-    return {
+    size, missing = pipeline.source_stats(rows)
+    out = {
         "total": len(rows),
         "renamed": renamed,
         "manual": len(rows) - renamed,
         "duplicates": _duplicate_ids(rows),
+        "bytes": size,
+        "missing_sources": missing,
     }
+    if output_dir:
+        out["same_volume"] = not pipeline.crosses_volume(rows, Path(output_dir))
+        out["free"] = pipeline.free_space(Path(output_dir))
+    return out
 
 
 @app.get("/api/statuses")
