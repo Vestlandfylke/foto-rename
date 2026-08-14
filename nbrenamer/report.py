@@ -6,7 +6,7 @@ import csv
 import os
 from pathlib import Path
 
-from .core import CSV_FIELDS, FOLDER_LIST_FIELDS, MANUAL_LIST_FIELDS
+from .core import COMPARE_FIELDS, CSV_FIELDS, FOLDER_LIST_FIELDS, MANUAL_LIST_FIELDS
 
 # Rapportane blir opna i Excel, og Excel på norsk Windows deler kolonnar på semikolon.
 # Han les fila som UTF-8 berre når ho startar med eit BOM, som "utf-8-sig" legg inn;
@@ -115,3 +115,13 @@ def write_folder_list(path: Path, rows: list[dict]) -> None:
 
 def folder_list_path_for(report: Path) -> Path:
     return report.with_name(report.stem + "_mapper.csv")
+
+
+def write_comparison(path: Path, rows: list[dict]) -> None:
+    """Skriv avvika mellom to køyringar. Tom fil med berre overskrifter tyder at dei var samde."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding=ENCODING, newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=COMPARE_FIELDS, delimiter=DELIMITER)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({k: row.get(k, "") for k in COMPARE_FIELDS})

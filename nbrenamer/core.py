@@ -92,6 +92,12 @@ FOLDER_LIST_FIELDS = [
     "mappe", "jpg", "tiff", "par", "tiff_utan_jpg", "jpg_utan_tiff", "rader", "gjer_opp", "merknad",
 ]
 
+# Samanlikning av to køyringar. Kolonnane ligg parvis med a og b, slik at ein kan sjå kva dei to
+# køyringane las på same fila utan å hoppe mellom to filer.
+COMPARE_FIELDS = [
+    "fil", "foto_id_a", "foto_id_b", "status_a", "status_b", "rotasjon_a", "rotasjon_b", "avvik",
+]
+
 
 def reason_for(status: str, error: str = "") -> str:
     """Statisk forklaringstekst per status, med systemfeilen lagt til ved tekniske feil."""

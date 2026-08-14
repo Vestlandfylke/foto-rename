@@ -243,6 +243,16 @@ Les rapporten og legg filene i utmappa:
 
 Skriv ut full OCR-tekst, kva rotasjon som gav treff, rå ID, status og føreslått Foto-ID.
 
+## Samanlikne to køyringar
+
+Skal du endre noko som påverkar lesinga, ny motor, ny CUDA-versjon, andre retningar, autokontrast av eller på, treng du å vite om resultatet blei det same. Køyr `discover` to gonger til to rapportar, og samanlikn dei:
+
+```powershell
+.\run-nb-renamer.ps1 compare --a rapport-gpu.csv --b rapport-cpu.csv
+```
+
+Utskrifta viser kor mange filer som blei lesne likt, og bryt resten ned i **ulik id** (den farlege: begge las ein ID, men ikkje same), **berre A/B las id**, **same id men ulik status eller retning** (ufarleg, men verdt å vite), og filer som berre finst i éi av køyringane. Er det avvik, blir dei skrivne til `<A>_mot_<B>.csv` med ein kolonne for kvar køyring, slik at ein kan sjå på dei sju filene som skil seg i staden for å lese tolv tusen rader. Ingen avvik gir inga fil, berre ei melding om at køyringane les identisk.
+
 ## Tekniske val
 
 - **Multi-rotasjon**: billedteksten står av og til loddrett. Verktøyet prøver `0°`, så `90°`, så `270°`, og stoppar ved første treff. Vassrette bilete kostar berre éi OCR-køyring.

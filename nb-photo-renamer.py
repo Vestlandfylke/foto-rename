@@ -31,6 +31,7 @@ from nbrenamer.core import (
     reason_for,
 )
 from nbrenamer import pipeline
+from nbrenamer.compare import AVVIK, compare_reports, comparison_path_for
 from nbrenamer.folders import count_work
 from nbrenamer.report import (
     folder_list_path_for,
@@ -38,6 +39,7 @@ from nbrenamer.report import (
     open_report_writer,
     read_processed,
     read_rows,
+    write_comparison,
     write_folder_list,
     write_manual_list,
 )
@@ -203,6 +205,46 @@ def cmd_test(args):
     return 0
 
 
+def cmd_compare(args):
+    """
+    Samanliknar to rapportar over det same materialet og skriv ut kva som skil dei.
+
+    Dette er kontrollen som gjer det forsvarleg å endre noko som påverkar lesinga: ny motor, ny
+    CUDA-versjon, andre retningar, autokontrast av eller på. Ein køyrer discover to gonger til to
+    rapportar, og ser så på dei filene der dei to ikkje les det same. Ingen les tolv tusen rader,
+    men alle kan sjå på sju.
+    """
+    a, b = Path(args.a), Path(args.b)
+    for fil in (a, b):
+        if not fil.exists():
+            print(f"Rapportfila finst ikkje: {fil}", file=sys.stderr)
+            return 1
+
+    avvik, oppsummering = compare_reports(read_rows(a), read_rows(b))
+    print(f"A: {a}")
+    print(f"B: {b}\n")
+    print(f"Filer i alt:        {oppsummering['filer']}")
+    print(f"I begge køyringane: {oppsummering['felles']}")
+    print(f"Les likt:           {oppsummering['like']}")
+    for namn in AVVIK:
+        if oppsummering[namn]:
+            print(f"  {namn + ':':<22}{oppsummering[namn]}")
+
+    if not avvik:
+        print("\nDei to køyringane les identisk på alle filene.")
+        return 0
+
+    ut = Path(args.out) if args.out else comparison_path_for(a, b)
+    write_comparison(ut, avvik)
+    print(f"\n{len(avvik)} avvik. Skrivne til: {ut}")
+    for rad in avvik[:10]:
+        print(f"  {Path(rad['fil']).name:<44} {rad['avvik']:<22} "
+              f"{rad['foto_id_a'] or '-'} / {rad['foto_id_b'] or '-'}")
+    if len(avvik) > 10:
+        print(f"  ... og {len(avvik) - 10} fleire i fila.")
+    return 0
+
+
 def add_ocr_args(p):
     p.add_argument("--id-pattern", default=DEFAULT_ID_PATTERN, help="Regex med to grupper: taldel og sekvensdel")
     p.add_argument("--prefix", default=DEFAULT_PREFIX, help="Prefiks i nytt filnamn")
@@ -239,6 +281,12 @@ def build_parser():
     t.add_argument("--file", required=True)
     add_ocr_args(t)
     t.set_defaults(func=cmd_test)
+
+    c = sub.add_parser("compare", help="Samanlikn to rapportar og finn filene som blei lesne ulikt")
+    c.add_argument("--a", required=True, help="Fyrste rapporten")
+    c.add_argument("--b", required=True, help="Andre rapporten")
+    c.add_argument("--out", default=None, help="Kvar avvika skal skrivast (standard: ved sida av A)")
+    c.set_defaults(func=cmd_compare)
 
     return parser
 
