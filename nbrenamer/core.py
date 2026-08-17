@@ -39,11 +39,20 @@ SEQUENCE_FIELD_PATTERN = re.compile(r"^\s*(\d{4})\s*$")
 # tjukk, mens eit årstal som ikkje høyrer til ligg lenger unna eller forskjøve til sida.
 NEIGHBOUR_GAP = 1.5
 
-# Ein heil ID med minst denne tryggleiksskåren er god nok til at me sluttar å prøve fleire
-# retningar. Under grensa les me vidare, for då kan ei anna retning ha eit betre bilete av
-# den same lappen. Målt på ekte materiale ligg reine lappar på 0,96 og oppover.
+# Ein heil ID med minst denne tryggleiksskåren er god nok til at me sluttar å leite. Under
+# grensa les me vidare, for då kan eit nytt forsøk ha eit betre bilete av den same lappen.
+# Målt på ekte materiale ligg reine lappar på 0,96 og oppover.
 STRONG_SCORE = 0.95
 
+# Deteksjonen er det dyraste steget i OCR-en, 0,33 s mot 0,11 s på halv oppløysing, og ho finn
+# lappen like godt der. Utsnitta blir framleis klipte frå det store biletet, så attkjenninga får
+# dei skarpe pikslane. Målt på ekte materiale: same ID-ar, og eit tredjedels sekund spart.
+DETECT_SCALE = 2
+
+# Retningane heilbiletet blir snudd i **dersom** fyrste forsøket ikkje finn ID-en. Sjølve
+# leseretninga til teksten er ikkje eit problem lenger, for kvart tekstfelt blir retta opp og
+# lese kvar for seg. Dette er berre eit sikkerheitsnett for at *deteksjonen* kan gå glipp av ein
+# lapp i éi retning og finne han i ei anna.
 DEFAULT_ROTATIONS = "0,90,270,180"
 DEFAULT_MAX_DIM = 2048
 DEFAULT_PREFIX = "SFFf"
@@ -234,19 +243,6 @@ def _to_bgr(img: Image.Image) -> np.ndarray:
     return np.asarray(img)[:, :, ::-1].copy()
 
 
-def _result_texts(result) -> list[str]:
-    txts = getattr(result, "txts", None)
-    if not txts:
-        return []
-    return [str(t) for t in txts]
-
-
-def _result_scores(result, n: int) -> list[float]:
-    """OCR-en si eiga tryggleiksskår per tekstfelt. Manglar ho, reknar me alt som sikkert."""
-    scores = getattr(result, "scores", None) or []
-    return [float(scores[i]) if i < len(scores) else 1.0 for i in range(n)]
-
-
 def _extent(box) -> tuple[float, float, float, float]:
     """Omskrivande rektangel (x0, x1, y0, y1) for eit firkanta OCR-felt."""
     xs = [float(p[0]) for p in box]
@@ -285,6 +281,95 @@ def _adjacent(box_a, box_b) -> bool:
 
 
 @dataclass
+class TextField:
+    """
+    Eit tekstfelt slik OCR-en fann det.
+
+    `rotation` er kor mange gradar biletet må snuast for at feltet skal stå leseleg, altså
+    svaret på kva veg denne teksten står. Ein lapp langs kanten gir 90 eller 270, ein lapp som
+    står opp ned gir 180.
+    """
+
+    text: str
+    score: float
+    box: list
+    rotation: int
+
+
+def _side(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return float(np.hypot(a[0] - b[0], a[1] - b[1]))
+
+
+def _straighten(img: Image.Image, box) -> tuple[Image.Image, bool]:
+    """
+    Klipper ut eit tekstfelt og rettar det opp til eit rektangel.
+
+    Lappane er sette på i hand og står sjeldan heilt rett, og skeiv tekst kostar attkjenninga
+    treffsikkerheit. Pillow vil ha hjørna i rekkjefølgja øvst-venstre, nedst-venstre,
+    nedst-høgre, øvst-høgre, mens detektoren gir dei med klokka frå øvst-venstre. Står feltet
+    på høgkant, blir det lagt ned med klokka, og då er det andre svaret berre 180 grader unna.
+    """
+    pts = [(float(p[0]), float(p[1])) for p in box]
+    w = max(_side(pts[0], pts[1]), _side(pts[3], pts[2]))
+    h = max(_side(pts[0], pts[3]), _side(pts[1], pts[2]))
+    w, h = max(int(round(w)), 4), max(int(round(h)), 4)
+    quad = [pts[0], pts[3], pts[2], pts[1]]
+    crop = img.transform((w, h), Image.QUAD, [c for p in quad for c in p], Image.BICUBIC)
+    upright = h > 1.5 * w
+    if upright:
+        crop = crop.rotate(-90, expand=True)
+    return crop, upright
+
+
+def read_fields(engine, img: Image.Image) -> list[TextField]:
+    """
+    Finn all tekst i biletet og les kvart felt i den leseretninga OCR-en er tryggast på.
+
+    Dette er kjernen i lesinga. Detektoren finn tekstfelta uansett kva veg dei står, kvart felt
+    blir retta opp til eit rektangel, og så blir det lese både slik det ligg og opp ned. Den
+    lesinga med best skår vinn. Det er dette som gjer at eit løpenummer som står opp ned blir
+    lese som «0004» og ikkje «7000», utan at heilbiletet må snuast, og det er grunnen til at me
+    ikkje treng å gjette på kva veg motivet ligg.
+    """
+    small = img if DETECT_SCALE == 1 else img.resize(
+        (max(img.width // DETECT_SCALE, 1), max(img.height // DETECT_SCALE, 1)), Image.BILINEAR
+    )
+    det = engine(_to_bgr(small), use_det=True, use_cls=False, use_rec=False)
+    boxes = getattr(det, "boxes", None)
+    if boxes is None or len(boxes) == 0:
+        return []
+
+    boxes = [[(float(p[0]) * DETECT_SCALE, float(p[1]) * DETECT_SCALE) for p in box] for box in boxes]
+    crops, uprights, variants = [], [], []
+    for box in boxes:
+        crop, upright = _straighten(img, box)
+        crops.append(crop)
+        uprights.append(upright)
+        variants.append(_to_bgr(crop))
+        variants.append(_to_bgr(crop.transpose(Image.ROTATE_180)))
+
+    rec = engine.recognize_txt(variants)
+    txts = list(getattr(rec, "txts", None) or [])
+    scores = list(getattr(rec, "scores", None) or [])
+    fields: list[TextField] = []
+    for i, box in enumerate(boxes):
+        pairs = [
+            (str(txts[j]) if j < len(txts) else "", float(scores[j]) if j < len(scores) else 0.0)
+            for j in (2 * i, 2 * i + 1)
+        ]
+        (text, score), flipped = (pairs[0], False) if pairs[0][1] >= pairs[1][1] else (pairs[1], True)
+        if not text.strip():
+            continue
+        # Eit felt som stod på høgkant er lagt ned med klokka, og klokka 90 grader er 270 i
+        # Pillow, som snur mot klokka.
+        rotation = 270 if uprights[i] else 0
+        if flipped:
+            rotation = (rotation + 180) % 360
+        fields.append(TextField(text, score, box, rotation))
+    return fields
+
+
+@dataclass
 class IdCandidate:
     num1: str
     num2: str
@@ -305,32 +390,33 @@ class IdCandidate:
         return (1 if self.whole else 0, self.score)
 
 
-def _candidates_in(result, pattern: re.Pattern, rot: int) -> list[IdCandidate]:
-    """Alle ID-kandidatar i eitt OCR-resultat, både heile og slike som må settast saman."""
-    txts = _result_texts(result)
-    scores = _result_scores(result, len(txts))
-    boxes = getattr(result, "boxes", None)
+def _candidates_in(fields: list[TextField], pattern: re.Pattern, base_rotation: int = 0) -> list[IdCandidate]:
+    """
+    Alle ID-kandidatar i tekstfelta, både heile og slike som må settast saman.
+
+    `base_rotation` er rotasjonen heilbiletet alt er snudd med, slik at rotasjonen som blir
+    ført i rapporten er rekna frå originalen og ikkje frå det snudde biletet.
+    """
     found: list[IdCandidate] = []
-
-    for i, text in enumerate(txts):
-        m = pattern.search(text)
+    for field in fields:
+        m = pattern.search(field.text)
         if m:
-            found.append(IdCandidate(m.group(1), m.group(2), m.group(0), rot, scores[i], True))
+            found.append(IdCandidate(
+                m.group(1), m.group(2), m.group(0),
+                (base_rotation + field.rotation) % 360, field.score, True,
+            ))
 
-    # Utan koordinatar kan me ikkje vite kva som høyrer saman, og då gissar me ikkje.
-    if boxes is None or len(boxes) < len(txts):
-        return found
-
-    sequences = [(i, m.group(1)) for i, text in enumerate(txts) if (m := SEQUENCE_FIELD_PATTERN.match(text))]
-    for i, text in enumerate(txts):
-        m = SERIES_TAIL_PATTERN.search(text)
+    sequences = [(f, m.group(1)) for f in fields if (m := SEQUENCE_FIELD_PATTERN.match(f.text))]
+    for field in fields:
+        m = SERIES_TAIL_PATTERN.search(field.text)
         if not m:
             continue
-        for j, num2 in sequences:
-            if j == i or not _adjacent(boxes[i], boxes[j]):
+        for other, num2 in sequences:
+            if other is field or not _adjacent(field.box, other.box):
                 continue
             found.append(IdCandidate(
-                m.group(1), num2, f"{text.strip()} + {txts[j].strip()}", rot, min(scores[i], scores[j]), False
+                m.group(1), num2, f"{field.text.strip()} + {other.text.strip()}",
+                (base_rotation + field.rotation) % 360, min(field.score, other.score), False,
             ))
     return found
 
@@ -346,13 +432,16 @@ class OcrOutcome:
 
 def ocr_image(engine, path: Path, cfg: OcrConfig) -> OcrOutcome:
     """
-    OCR-ar biletet i kvar retning og vel den beste ID-kandidaten.
+    Les biletet og vel den beste ID-kandidaten.
 
     Same ID-en står ofte to stader på eit skann, handskriven i motivet og maskinskriven på ein
-    lapp langs kanten, og lappen ligg gjerne på tvers. Difor les me vidare i fleire retningar i
-    staden for å ta det fyrste treffet: ein lapp som står loddrett gir eit mykje betre treff når
-    biletet er snudd. Ei retning som gir ein heil, trygg ID er likevel god nok, og då stoppar me,
-    slik at reine lappar kostar like lite som før.
+    lapp langs kanten, og då skal lappen vinne. Difor samlar me alle kandidatane i staden for å
+    ta det fyrste treffet, og vel mellom dei etter reglane i `IdCandidate.rank`.
+
+    Kvart forsøk er éi deteksjon der kvart tekstfelt blir retta opp og lese for seg, så
+    leseretninga til teksten er handtert der. Retningane i `cfg.rotations` er difor berre eit
+    sikkerheitsnett for at *deteksjonen* kan gå glipp av ein lapp i éi retning, og dei blir
+    aldri brukte når fyrste forsøket gir ein heil ID med god skår.
     """
     base = load_base_image(path, cfg.max_dim, cfg.autocontrast)
     first_text = ""
@@ -360,11 +449,11 @@ def ocr_image(engine, path: Path, cfg: OcrConfig) -> OcrOutcome:
     best_text = ""
     for rot in cfg.rotations:
         img = base.rotate(rot, expand=True) if rot else base
-        result = engine(_to_bgr(img))
-        text = "  ".join(_result_texts(result))
+        fields = read_fields(engine, img)
+        text = "  ".join(f.text for f in fields)
         if not first_text:
             first_text = text
-        for cand in _candidates_in(result, cfg.pattern, rot):
+        for cand in _candidates_in(fields, cfg.pattern, rot):
             if best is None or cand.rank > best.rank:
                 best, best_text = cand, text
         if best is not None and best.whole and best.score >= STRONG_SCORE:

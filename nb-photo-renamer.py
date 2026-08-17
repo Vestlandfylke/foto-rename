@@ -195,7 +195,7 @@ def cmd_test(args):
     dt = time.perf_counter() - t0
 
     print(f"Full OCR-tekst:\n  {outcome.text}\n")
-    print(f"Rotasjon som gav treff: {outcome.rotation}")
+    print(f"Rotasjon som gjer ID-en leseleg: {outcome.rotation}")
     print(f"Rå ID i motiv:          {outcome.raw_id}")
     print(f"Status:                 {cls.status}")
     if cls.error:
@@ -251,7 +251,10 @@ def add_ocr_args(p):
     p.add_argument("--id-pattern", default=DEFAULT_ID_PATTERN, help="Regex med to grupper: taldel og sekvensdel")
     p.add_argument("--prefix", default=DEFAULT_PREFIX, help="Prefiks i nytt filnamn")
     p.add_argument("--max-dim", type=int, default=DEFAULT_MAX_DIM, help="Lengste biletkant før OCR")
-    p.add_argument("--rotations", default=DEFAULT_ROTATIONS, help="Rotasjonar som blir prøvde, t.d. 0,90,270")
+    p.add_argument("--rotations", default=DEFAULT_ROTATIONS,
+                   help="Retningar heilbiletet blir prøvd snudd i dersom ID-en ikkje blir funnen. "
+                        "Teksten blir lesen i alle retningar uansett, så «0» åleine er nok for "
+                        "materiale der lappen alltid blir funnen")
     p.add_argument("--autocontrast", action="store_true", default=True, help="Autokontrast (på som standard)")
     p.add_argument("--no-autocontrast", dest="autocontrast", action="store_false")
     p.add_argument("--device", choices=["gpu", "cpu"], default="gpu", help="OCR på GPU (torch-CUDA) eller CPU (ONNX)")
