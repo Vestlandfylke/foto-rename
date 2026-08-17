@@ -398,13 +398,14 @@ def api_report(
 
 
 @app.get("/api/report/summary")
-def api_report_summary(path: str, output_dir: Optional[str] = None):
+def api_report_summary(path: str, output_dir: Optional[str] = None, by_year: bool = False):
     """
     Kva ei omdøyping av denne rapporten vil gjere. Blir vist til stadfesting før steg 3, der
     éin knapp elles ville skrive tusenvis av filer utan at brukaren såg omfanget fyrst. Med
-    `output_dir` seier svaret òg kor mange byte det gjeld, og om ei flytting ville gått
-    innanfor same volum. Eit foto er eit par på rundt 630 MB, så den skilnaden avgjer om
-    steg 3 tek sekund eller timar.
+    `output_dir` seier svaret òg kor mange byte det gjeld, om ei flytting ville gått innanfor
+    same volum, og kor mange av namna som alt er tekne i ut-mappa. Eit foto er eit par på rundt
+    630 MB, så den fyrste skilnaden avgjer om steg 3 tek sekund eller timar. `by_year` må vere
+    det same som i steg 3, sidan årsmappene avgjer kvar filene hamnar.
     """
     p = Path(path)
     if not p.is_file():
@@ -423,6 +424,7 @@ def api_report_summary(path: str, output_dir: Optional[str] = None):
     if output_dir:
         out["same_volume"] = not pipeline.crosses_volume(rows, Path(output_dir))
         out["free"] = pipeline.free_space(Path(output_dir))
+        out["existing_targets"] = pipeline.existing_targets(rows, Path(output_dir), by_year)
     return out
 
 

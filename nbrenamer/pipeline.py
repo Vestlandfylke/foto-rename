@@ -450,6 +450,34 @@ def will_be_renamed(row: dict) -> bool:
     return row.get("status") == STATUS_OK and bool(row.get("new_basename"))
 
 
+def jpg_target(row: dict, output_dir: Path, organize_by_year: bool = False) -> Path:
+    """
+    Kvar JPEG-en i rada hamnar. Rader som får nytt namn går til ut-mappa, eventuelt under årstalet,
+    og resten til `_manuell\\<status>\\` med originalnamnet. Både køyringa og førehandssjekken før
+    henne spør denne, slik at det ikkje finst to reglar for kva ei fil kjem til å heite.
+    """
+    jpg = Path(row["original_jpg"])
+    if will_be_renamed(row):
+        target_dir = output_dir / row["year"] if (organize_by_year and row.get("year")) else output_dir
+        return target_dir / (row["new_basename"] + jpg.suffix.lower())
+    return output_dir / "_manuell" / row["status"] / jpg.name
+
+
+def existing_targets(rows: list[dict], output_dir: Path, organize_by_year: bool = False) -> int:
+    """
+    Kor mange rader som alt har filnamnet sitt i ut-mappa. Duplikatsjekken i steg 2 ser berre
+    rapporten han har framfor seg, så to køyringar mot same ut-mappa kan gi same filnamn utan at
+    nokon får vite det før køyringa er i gang. Då er valet gjort: fila blir ståande og treffet talt
+    som konflikt, eller ho blir skrive over, dersom brukaren har bede om det. Ei stat-spørjing per
+    rad, og oppsummeringa spør alt om storleiken på kvar kjeldefil, så det er ikkje dyrare enn det
+    som alt skjer.
+    """
+    output_dir = Path(output_dir)
+    if not output_dir.exists():
+        return 0
+    return sum(1 for row in rows if jpg_target(row, output_dir, organize_by_year).exists())
+
+
 def execute_rows(
     rows: list[dict],
     output_dir: Path,
@@ -504,10 +532,10 @@ def execute_rows(
                 status = row["status"]
 
                 if will_be_renamed(row):
-                    target_dir = output_dir / row["year"] if (organize_by_year and row.get("year")) else output_dir
+                    dest = jpg_target(row, output_dir, organize_by_year)
+                    target_dir, name = dest.parent, dest.name
                     base = row["new_basename"]
-                    name = base + jpg.suffix.lower()
-                    res = _place_file(jpg, target_dir / name, move, overwrite)
+                    res = _place_file(jpg, dest, move, overwrite)
                     if res == "konflikt":
                         stats["konflikt"] += 1
                         manual_rows.append(
@@ -521,10 +549,11 @@ def execute_rows(
                                                base + tiff.suffix.lower() if tiff else "",
                                                move, overwrite, stats, manual_rows)
                         stats["omdøypt"] += 1
-                        note_done(row, target_dir / name, new_tiff)
+                        note_done(row, dest, new_tiff)
                 else:
-                    sub = manual_root / status
-                    res = _place_file(jpg, sub / jpg.name, move, overwrite)
+                    dest = jpg_target(row, output_dir, organize_by_year)
+                    sub = dest.parent
+                    res = _place_file(jpg, dest, move, overwrite)
                     if res == "konflikt":
                         stats["konflikt"] += 1
                         manual_rows.append(

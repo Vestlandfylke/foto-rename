@@ -1078,7 +1078,8 @@ $('e_moveOk').onchange = () => $('e_moveWarn').classList.remove('mangler');
 async function confirmExecute() {
   const flytt = flyttar();
   const s = await api('/api/report/summary?path=' + encodeURIComponent($('e_report').value.trim())
-    + '&output_dir=' + encodeURIComponent($('e_output').value.trim()));
+    + '&output_dir=' + encodeURIComponent($('e_output').value.trim())
+    + '&by_year=' + ($('e_year').checked ? 'true' : 'false'));
   const mappe = esc($('e_output').value.trim());
   const storleik = formatBytes(s.bytes);
   const punkt = [
@@ -1107,6 +1108,14 @@ async function confirmExecute() {
         ? `Foto-ID-en ${s.duplicates[0]} er brukt på fleire bilete, og dei vil kollidere. `
         : `${dubletter} Foto-ID-ar er brukte på fleire bilete, til dømes ${s.duplicates[0]}, og dei vil kollidere. `) +
       'Gå tilbake til steg 2 om du vil rette det fyrst.');
+  }
+  // Duplikatsjekken i steg 2 ser berre rapporten, så filer frå ei tidlegare køyring mot same
+  // ut-mappa er usynlege for han. Her er dei ikkje det, og her kan brukaren framleis snu.
+  if (s.existing_targets) {
+    const kva = s.existing_targets === 1 ? 'Eitt av namna' : `${s.existing_targets} av namna`;
+    åtvaringar.push($('e_over').checked
+      ? `${kva} finst alt i ut-mappa, frå ei tidlegare køyring. Dei filene blir skrivne over.`
+      : `${kva} finst alt i ut-mappa, frå ei tidlegare køyring. Dei blir ikkje rørte, men talde som konfliktar, og bileta hamnar i _manuell.`);
   }
   // Backenden stoppar køyringa som manglar plass, men det er betre å seie frå medan brukaren
   // framleis har dialogen open og kan velje ei anna mappe.
