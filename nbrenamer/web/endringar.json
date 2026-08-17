@@ -1,94 +1,106 @@
 {
-  "_om": "Endringslogg vist i appen under Hjelp > Kva er nytt. Nyaste versjon fyrst. Skriv for ein arkivar: kva som er annleis å bruke, ikkje kva som er endra i koden. Legg til ei ny blokk øvst same dag som versjonen blir lagd ut.",
+  "_om": "Endringslogg vist i appen under Hjelp > Kva er nytt. Nyaste versjon fyrst. Skriv kort og konkret om kva som er gjort. Bruk standard fagterminologi (OCR, deteksjon, gjenkjenning, oppløysing, GPU, CUDA, CSV, UTF-8, prosesspool), men vanleg, moderat nynorsk elles: gjenkjenning framfor attkjenning, på nytt framfor om att, enkelt framfor einskild. Legg til ei ny blokk øvst same dag som versjonen blir lagd ut.",
   "versjonar": [
     {
-      "versjon": "1.1.6",
+      "versjon": "1.2.0",
       "dato": "2026-08-17",
-      "overskrift": "Appen finn ID-en uansett kva veg lappen står",
+      "overskrift": "OCR i to steg, og fleire ID-ar blir funne",
       "punkt": [
-        "Før måtte appen snu heile biletet og prøve seg fram for å finne ID-en. No finn han kvar tekstbit i biletet for seg og les han rett veg. Lappar som står loddrett langs kanten, og tekst som står opp ned, blir lesne like godt som tekst som står rett.",
-        "Eit løpenummer som stod opp ned kunne bli lese feil, til dømes 7000 i staden for 0004. Det er retta.",
-        "Står ID-en to stader i biletet, både handskriven i motivet og trykt på ein lapp, vel appen no den som er tryggast lesen i staden for den han fann fyrst.",
-        "Lesinga er raskare: rundt 0,6 sekund per bilete mot 1 sekund før. På ti tusen bilete er det nesten to timar spart.",
-        "I gjennomgangen står no eit stort utsnitt av sjølve ID-lappen øvst, så du ser med ein gong kva som står der i staden for å leite etter teksten i motivet.",
-        "Ein liten lapp under motivet blir no funnen. Før såg appen berre etter lappen i eit forminska bilete, og då var den minste teksten borte. No prøver han biletet i full oppløysing når han ikkje fann noko fyrste gongen.",
-        "Står løpenummeret på same linje som eigaren, til dømes «0042 Eigar: Johan B.Smørdal», blir det no lese. Før måtte nummeret stå heilt for seg sjølv.",
-        "Under Avanserte val er dei fire valfelta for leseretning bytte med eitt, sidan appen no finn retninga sjølv.",
-        "Stadfestinga i steg 3 seier no kor mange av namna som alt finst i ut-mappa frå ei tidlegare køyring, og om dei blir skrivne over eller talde som konfliktar. Før såg du slike kollisjonar først i lista etter køyringa. Åtvaringa om at same Foto-ID er brukt to gonger gjeld framleis heile rapporten, altså alle mappene i køyringa.",
-        "Ny meny: Hjelp > Kva er nytt, som er denne lista."
+        "OCR-en er lagt om til to steg: fyrst finn appen kvar det står tekst i biletet (deteksjon), deretter les han kvart tekstfelt for seg (gjenkjenning), der feltet blir retta opp og lese i begge leseretningar. Før måtte heile biletet roterast og lesast på nytt for kvar retning. Loddrette ID-lappar langs kanten, og tekst som står opp ned, blir no lesne like godt som tekst som står vassrett.",
+        "Eit løpenummer som stod opp ned kunne bli lese feil, til dømes 7000 i staden for 0004. Det er retta, sidan kvart felt no blir lese i begge retningar, og den lesinga OCR-en er mest sikker på vinn.",
+        "Står ID-en både handskriven i motivet og trykt på ein ID-lapp, samlar appen alle kandidatane og rangerer dei, i staden for å ta det fyrste treffet. Ein komplett ID i eitt tekstfelt vinn over ein som må settast saman av to felt, og elles avgjer kor sikker OCR-en er.",
+        "Deteksjonen køyrer på halv oppløysing, som er raskare, men små ID-lappar under motivet forsvann då. Finn ikkje appen ein sikker ID i fyrste forsøket, blir biletet lese på nytt i full oppløysing, før dei roterte forsøka.",
+        "Løpenummeret kunne før berre bindast til serien når det stod åleine i eit tekstfelt. No held det at det står fyrst i feltet, så «0042 Eigar: Johan B.Smørdal» blir lese rett.",
+        "Dekodinga av neste bilete går parallelt med OCR-en, slik at GPU-en ikkje står og ventar på diskane. Målt på same materiale: 0,55 sekund per bilete, mot 1,13 i versjon 1.1.5.",
+        "Gjennomgangen i steg 2 viser eit utsnitt av sjølve ID-lappen øvst, klipt ut frå der OCR-en fann teksten og dekoda i høg oppløysing, i tillegg til heile biletet.",
+        "Rotasjonsvala under Avanserte val er bytte med eitt val, sidan leseretninga blir handtert per tekstfelt. Valet styrer no berre om appen skal prøve å rotere biletet når ingen ID blei funnen.",
+        "Stadfestinga i steg 3 tel opp kor mange av filnamna som alt finst i ut-mappa, og seier om dei blir skrivne over eller rekna som konfliktar. Duplikatsjekken i steg 2 dekkjer heile rapporten, altså alle mappene i køyringa, men han kjenner ikkje filer frå tidlegare køyringar.",
+        "Nytt menyval: Hjelp > Kva er nytt, som viser denne lista. Han kjem òg opp av seg sjølv fyrste gongen ein ny versjon blir starta."
       ]
     },
     {
       "versjon": "1.1.5",
       "dato": "2026-08-14",
-      "overskrift": "Kvittering på kva som kom på plass",
+      "overskrift": "Kvittering frå steg 3",
       "punkt": [
-        "Steg 3 lagar no ei kvitteringsliste, omdøypte.csv, med kvar fil som kom på plass, kva ho heitte før, kva ho heiter no og kvar ho ligg. Lista blir skriven undervegs, så ho er komplett fram til avbrotet sjølv om ei køyring blir broten.",
-        "Maskina sovnar ikkje lenger midt i ei lang køyring. Skjermen kan slå seg av som normalt, men jobben held fram."
+        "Steg 3 skriv ei kvittering, omdøypte.csv, i ut-mappa: kjeldesti, målsti, dei to stiane til TIFF-en, Foto-ID og om fila blei kopiert eller flytta. Rapporten seier kva namn kvar fil skulle få, ikkje kva som faktisk blei skrive, og det er det siste ein revisjon spør om. Rada blir skriven til disk med ein gong fila er på plass, så lista er sann fram til eit avbrot, og ei ny køyring mot same ut-mappa legg til rader i staden for å skrive over.",
+        "Appen ber Windows om å halde seg vaken mens ein jobb går, sidan ei maskin som går i dvale stoppar jobben utan å gi feilmelding. Skjermen kan framleis slå seg av."
       ]
     },
     {
       "versjon": "1.1.4",
       "dato": "2026-08-14",
-      "overskrift": "Excel, nye skjermkort, og flytting i staden for kopiering",
+      "overskrift": "CUDA 12.8, CSV til Excel, flytting, og fire gonger raskare lesing",
       "punkt": [
-        "Rapporten opnar rett i Excel, med norske bokstavar og kolonnane på plass.",
-        "Skjermkort av nyaste type (RTX PRO og GeForce 50-serien) blir no støtta. Har du installert GPU-pakkane frå ein tidlegare versjon, tilbyr appen å hente dei på nytt.",
-        "I steg 3 kan du velje å flytte originalane i staden for å kopiere dei. Det sparer plass når materialet er fleire terabyte, og du må stadfeste valet, sidan originalane då blir borte frå kjeldemappa.",
-        "Lesinga blei fire gonger raskare.",
-        "TIFF-filer utan JPEG blir no med i rapporten og følgjer med til _manuell, i staden for å bli liggjande att i kjeldemappa.",
-        "Kvar mappe blir gjord opp mot disken i ei eiga liste, så du kan sjå om ei mappe ikkje går opp.",
-        "Appen oppdagar halve kopiar, til dømes når ein nettverksdisk fell ut midt i ei kopiering, og filer som ikkje kom med.",
-        "Ei lesing stoppar ikkje lenger heilt dersom éin del av jobben feilar.",
-        "Startknappen i steg 3 blir klar igjen når du endrar vala, så du kan køyre på nytt utan å starte appen om."
+        "CSV-filene blir skrivne med semikolon som skiljeteikn og UTF-8 med BOM (utf-8-sig), som er det Excel på norsk Windows treng for å dele kolonnane rett og vise æ, ø og å. Innlesinga finn skiljeteiknet frå overskriftslinja, så eldre rapportar med komma går framleis inn.",
+        "GPU-pakkane blir henta frå CUDA 12.8 i staden for 12.4, sidan Blackwell-korta (RTX PRO og GeForce 50-serien) manglar kjernar i eldre CUDA-utgåver. Installasjonen merkjer mappa med kva serie pakkane kom frå, og appen tilbyr å hente dei på nytt når serien er utdatert.",
+        "Steg 3 kan flytte originalane i staden for å kopiere dei. Flytting innanfor same disk er berre ei namneendring i filsystemet, altså gjort med ein gong og utan behov for ledig plass, mens flytting mellom to diskar er ei kopiering med sletting etterpå. Appen prøver skriveløyvet i kjeldemappa før køyringa, sidan uttrekka ofte er skriveverna.",
+        "JPEG-dekodinga bruker draft-modus, så dekodaren leverer 2048 piksler direkte i staden for å dekode heile 92-megapikselbiletet fyrst: 1,08 til 0,26 sekund per bilete, med same OCR-treff som før.",
+        "Indekseringa parar JPEG og TIFF på filnamn før noko blir opna, mappe for mappe. Ein TIFF utan JPEG får no status «TIFF utan JPEG» og følgjer med til _manuell, i staden for å bli liggjande igjen i kjeldemappa når du vel flytt.",
+        "Kvar mappe blir kontrollert mot filene som låg der, og resultatet står i <rapport>_mapper.csv, der kolonnen gjer_opp er «nei» for dei mappene eit menneske må sjå på.",
+        "Filstorleiken blir samanlikna etter kvar kopi. Ein kopi som blir avbroten, typisk fordi ein nettverksdisk fell ut, gir ikkje alltid ei feilmelding, men ei fil som ser komplett ut og er halv. Slike rader blir melde som feil, og den avkorta fila blir ikkje sletta, sidan originalen kan vere borte ved flytting mellom to diskar.",
+        "TIFF-en blir følgd opp i eit eige tal, tiff_feil. Før blei resultatet av TIFF-kopieringa kasta, så ein kollisjon eller ein avkorta arkivmaster kunne gå gjennom mens rada blei talt som omdøypt.",
+        "Ein worker som døyr i prosesspoolen stoppar ikkje lenger heile lesinga. Poolen blir bygd opp igjen og køyringa held fram, og workerane blir bytte ut med jamne mellomrom.",
+        "Ei grense på 300 megapikslar blir sjekka før pikslane blir henta, så ei fil med øydelagd header blir ei feilrad i staden for at operativsystemet stoppar prosessen.",
+        "Startknappen i steg 3 blir aktiv igjen når du endrar vala, så du ikkje treng å starte appen på nytt for å køyre ein gong til.",
+        "Ny CLI-kommando: compare, som stiller to rapportar opp mot kvarandre og viser kvar Foto-ID, status eller rotasjon er ulik. Nyttig for å måle om ei endring i OCR-en flyttar noko."
       ]
     },
     {
       "versjon": "1.1.3",
       "dato": "2026-08-12",
-      "overskrift": "Trygg omdøyping, og snarvegar som blir verande",
+      "overskrift": "Diskplass, filfeil, avbrot og snarvegar som blir verande",
       "punkt": [
-        "Steg 3 seier frå før det er for seint dersom det ikkje er plass på disken, og ei enkelt fil som feilar stoppar ikkje lenger heile jobben.",
-        "Snarvegen på skrivebordet og appikonet blir verande gjennom ei oppdatering."
+        "Steg 3 reknar ut kor mykje plass jobben treng, og stoppar før fyrste fila blir skriven dersom disken ikkje har rom. Ei køyring på tolv tusen foto skriv rundt 7,4 TB, så dette er ikkje ein teoretisk situasjon.",
+        "Ein feil på ei enkelt fil stoppar ikkje lenger heile jobben. Fila hamnar i manuell-lista med grunnen, og køyringa held fram. Det same gjeld konfliktar.",
+        "Steg 3 kan avbrytast undervegs, rapporten blir skriven trygt (heile fila eller ingenting), og det er sperra å lagre rapporten mens ein jobb går.",
+        "Snarvegane på skrivebordet og i startmenyen blir laga på nytt etter ei stille oppdatering, som elles slettar dei. App-identiteten (AppUserModelID) er sett på begge, så Windows viser rett ikon i oppgåvelinja."
       ]
     },
     {
       "versjon": "1.1.2",
       "dato": "2026-08-12",
-      "overskrift": "Nytt appikon",
+      "overskrift": "Appikonet teikna på nytt",
       "punkt": [
-        "Appen har fått eige ikon i fylkeskommunen sin farge, i menyen, på skrivebordet og i installasjonsfila."
+        "Ikonet er teikna på nytt i profilfargen PMS 304 C, og blir brukt i installasjonsfila, programvindauget, snarvegane og som favicon i web-UI-et."
       ]
     },
     {
       "versjon": "1.1.1",
       "dato": "2026-08-11",
-      "overskrift": "Oppdateringar verkar",
+      "overskrift": "Automatiske oppdateringar verkar",
       "punkt": [
-        "Retta at appen ikkje fann nye versjonar når du valde Hjelp > Sjekk etter oppdateringar."
+        "Retta at appen ikkje fann nye versjonar. Byggjejobben lasta ikkje opp alle release-filene, og utan latest.yml har appen inga fil å lese for å sjå om det finst noko nyare."
       ]
     },
     {
       "versjon": "1.1.0",
       "dato": "2026-08-11",
-      "overskrift": "Gjennomgangsmodus og eit tryggare steg 3",
+      "overskrift": "Gjennomgangsmodus, stadfesting i steg 3, og desktop-grensesnitt",
       "punkt": [
-        "Nytt i steg 2: Start gjennomgang viser eitt bilete om gongen, snudd rett veg, med ID-feltet i fokus. Enter går vidare, Shift og Enter går tilbake, Ctrl og S lagrar. Rettinga går utan å ta hendene frå tastaturet.",
-        "Statusane har fått lesbare namn, og kvart bilete har ei grunngjeving som forklarer kvifor det treng handarbeid.",
-        "Heile rapporten er tilgjengeleg i steg 2, ikkje berre dei 500 fyrste radene.",
-        "Appen varslar når ein Foto-ID ikkje passar mønsteret, og når same ID er brukt på fleire bilete. Duplikat blir sjekka over heile rapporten, ikkje berre den sida du ser.",
-        "Steg 3 spør om stadfesting og viser kva som kjem til å skje før noko blir gjort, og tek deg til resultatet etterpå.",
-        "Lange køyringar viser tid att, framdrift i oppgåvelinja, og varslar når dei er ferdige.",
-        "Bla gjennom bruker no systemdialogen i Windows, som er mykje raskare.",
-        "Grensesnittet ser ut som eit program i staden for ei nettside."
+        "Retta at appen kunne stå fem minutt på splash-skjermen ved oppstart. UI-et henta ein skriftfil frå Google før sida blei teikna, og på maskiner der utgåande trafikk dit er stengd, viste Chromium ingenting før førespurnaden gav opp. Skriftfila er fjerna (Segoe UI, eller Inter om han finst lokalt), og oppstarten er målt til 2,7 sekund etterpå.",
+        "Gjennomgangsmodus i steg 2: eitt bilete om gongen, rotert slik at ID-en står rett veg, med OCR-teksten ved sida og ID-feltet i fokus. Enter går vidare, Shift+Enter tilbake, Ctrl+S lagrar, Esc lukkar.",
+        "Statuskodane er bytte med lesbare namn, og kvart bilete har ei grunngjeving som forklarer kvifor det treng handarbeid.",
+        "Heile rapporten er tilgjengeleg i steg 2, 200 rader om gongen med Førre og Neste og teljaren «Viser X-Y av Z». Før henta UI-et berre den fyrste sida, så alt etter dei 500 fyrste radene var utilgjengeleg. Rettingar du ikkje har lagra blir ikkje kasta når du byter side, og miniatyrbileta blir henta i 220 px i staden for 1000 px.",
+        "Foto-ID-en blir sjekka mot mønsteret, og du får varsel om duplikat. Duplikatsjekken går over heile rapporten, ikkje berre den sida du ser.",
+        "Steg 3 viser ei oppsummering til stadfesting før noko blir skrive: kor mange filer som får nytt namn, kor mange som hamnar i _manuell, kor mykje data det gjeld og kor mykje ledig plass det er i ut-mappa. Etterpå kan du opne ut-mappa eller rapporten direkte.",
+        "Lange køyringar viser kor lang tid som står att, til dømes «127 / 3400 · gått 4 min · ca. 18 min att · GPU». Talet blir halde tilbake dei tre fyrste bileta, der det er for ustabilt til å vere til nytte. Oppgåvelinja i Windows viser framdriftsstripe, og når jobben er ferdig kjem det eit varsel, men berre om appen ikkje alt står framme.",
+        "Filveljaren («Bla gjennom …») bruker den vanlege Windows-dialogen, med appvindauget som eigar, så han blir modal og ikkje hamnar bak vindauget. Før gjekk kvart klikk om backenden, som starta powershell.exe og bygde mappeveljaren fyrste gongen.",
+        "UI-et er lagt om frå nettside til programvindauge: fanerad for stega, arbeidsflate som fyller vindauget, tabellhovud som står fast når du rullar, statuslinje nedst med rapportnamn, radtal og GPU- eller CPU-merke, og Segoe UI i 13 px.",
+        "Leseretningane blir valde med fire bilete av kvar ID-stripa ligg, i staden for eit tekstfelt der ein skreiv «0,90,270».",
+        "Appen har fått eige ikon, brukt i programvindauget, installasjonsfila og som favicon i web-UI-et."
       ]
     },
     {
       "versjon": "1.0.0",
       "dato": "2026-08-11",
-      "overskrift": "Fyrste versjon",
+      "overskrift": "Fyrste versjon: desktop-app med lokal OCR",
       "punkt": [
-        "Les ID-en i dei skanna bileta, føreslår nye filnamn etter regelen for Foto-ID, og lagar dei omdøypte filene i tre steg. All lesing skjer lokalt på maskina, ingenting blir sendt ut."
+        "NB foto-namngivar som desktop-app: eit Electron-skal rundt ein lokal FastAPI-backend, med Python-runtime og OCR-modellar pakka inn i installasjonsfila. Maskina treng ikkje Python eller pakkar på førehand, og all prosessering skjer lokalt. Ingen data blir sende ut.",
+        "Arbeidsflyten i tre steg: les og rapporter, som køyrer OCR over inn-mappa og skriv ein CSV-rapport med føreslått Foto-ID per bilete; gjennomgå, der du rettar rapporten; og køyr omdøyping, som legg filene i ut-mappa med dei nye namna. TIFF-en følgjer JPEG-en når dei har same filnamn.",
+        "Automatiske oppdateringar frå GitHub: appen seier frå når ein nyare versjon finst, viser framdrift under nedlastinga, og installerer når du vel det.",
+        "GPU-akselerasjon blir installert når du ber om det (torch med CUDA, 2 til 3 GB), i ei mappe utanfor programmappa, slik at installasjonsfila held seg lita og oppdateringar ikkje rører pakkane. Utan GPU køyrer OCR-en på CPU.",
+        "Same funksjonaliteten finst som CLI (nb-photo-renamer.py med discover, execute og test) og som web-app, for den som vil køyre utan å installere."
       ]
     }
   ]

@@ -1,7 +1,7 @@
 {
   "name": "nb-foto-namngivar",
   "productName": "NB foto-namngivar",
-  "version": "1.1.6",
+  "version": "1.2.0",
   "description": "Lokal desktop-app som gir re-digitaliserte NB-fotofiler nye ID-baserte filnamn med lokal OCR.",
   "author": "Vestland fylkeskommune",
   "license": "MIT",
