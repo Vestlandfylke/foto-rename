@@ -18,6 +18,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from PIL import Image
 from pydantic import BaseModel
 
 from . import core, folders, pipeline
@@ -707,22 +708,50 @@ def api_browse(path: Optional[str] = None):
 _big_decode = threading.Semaphore(2)
 
 
+# Eit utsnitt av ID-lappen blir dekoda større enn det skal visast, slik at teksten har verkelege
+# pikslar å bli vist med. Lappen er typisk ein tredjedel av breidda, så eit 4096-dekode gir rundt
+# 1400 pikslar tekst å skalere ned frå, mot 700 om me dekoda i visningsstorleik.
+CROP_DECODE_DIM = 4096
+
+# Kor mykje luft rundt lappen, i delar av høgda på han. Litt kontekst gjer det lettare å sjå at
+# ein ser på rett lapp, men for mykje gjer teksten liten igjen.
+CROP_MARGIN = 0.6
+
+
+def _crop_to_rect(img, rect: tuple[float, float, float, float]):
+    """Klipper ut boksen med litt luft rundt, avgrensa til biletet."""
+    w, h = img.size
+    x0, y0, x1, y1 = (rect[0] * w, rect[1] * h, rect[2] * w, rect[3] * h)
+    luft = max((y1 - y0), (x1 - x0) * 0.05) * CROP_MARGIN
+    return img.crop((
+        int(max(0, x0 - luft)), int(max(0, y0 - luft)),
+        int(min(w, x1 + luft)), int(min(h, y1 + luft)),
+    ))
+
+
 @app.get("/api/thumb")
-def api_thumb(path: str, max_dim: int = 1000, rotate: int = 0):
+def api_thumb(path: str, max_dim: int = 1000, rotate: int = 0, crop: str = ""):
     """
     Biletet skalert til visning. `rotate` er same vinkel som `rotation` i rapporten, altså den
-    som gjorde ID-en leseleg for OCR-en. Gjennomgangen sender han med, slik at ei loddrett
-    tekststripe står rett veg på skjermen i staden for at brukaren må tyde biletet på sida.
+    som gjer ID-en leseleg. Gjennomgangen sender han med, slik at ei loddrett tekststripe står
+    rett veg på skjermen i staden for at brukaren må tyde biletet på sida.
+
+    `crop` er `id_boks` frå rapporten, altså kvar ID-en stod. Er han med, får ein utsnittet av
+    lappen i staden for heile motivet, dekoda større slik at teksten blir skarp.
     """
     p = Path(path)
     if not p.is_file():
         raise HTTPException(status_code=404, detail="Fila finst ikkje")
+    rect = core.parse_rect(crop)
     queue = _big_decode if p.suffix.lower() in core.TIFF_SUFFIXES else contextlib.nullcontext()
     try:
         with queue:
-            img = core.load_base_image(p, max_dim, autocontrast=False)
+            img = core.load_base_image(p, CROP_DECODE_DIM if rect else max_dim, autocontrast=False)
             if rotate % 360:
                 img = img.rotate(rotate, expand=True)
+            if rect:
+                img = _crop_to_rect(img, rect)
+                img.thumbnail((max_dim, max_dim), Image.LANCZOS)
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=85)
         buf.seek(0)

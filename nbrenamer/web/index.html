@@ -133,8 +133,15 @@
      blir klipt i staden for å krympe. */
   #walkDlg { width: min(1180px, 90vw); }
   .walk { display: flex; gap: 18px; padding: 16px; }
-  .walk-img { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; min-height: 66vh; }
-  .walk-img img { max-width: 100%; max-height: 66vh; border-radius: 6px; }
+  .walk-view { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .walk-lapp { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+  /* `display` her slår regelen nettlesaren har for hidden, så bilete utan ID ville fått ei tom
+     ramme med bilettekst og ingenting i. */
+  .walk-lapp[hidden] { display: none; }
+  .walk-lapp img { width: 100%; max-height: 22vh; object-fit: contain; object-position: left center; background: #fff; border: 1px solid var(--border); border-radius: 8px; }
+  .walk-lapp figcaption { font-size: 12px; color: var(--muted); }
+  .walk-img { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; min-height: 40vh; }
+  .walk-img img { max-width: 100%; max-height: 44vh; border-radius: 6px; }
   .walk-side { flex: 0 0 360px; display: flex; flex-direction: column; gap: 14px; }
   /* Felta skal halde si eiga høgd. Utan dette arvar dei flex:1 frå .field og strekkjer seg
      utover i kolonna, så etikettane hamnar langt frå kvarandre. */
@@ -351,7 +358,16 @@
 <dialog id="walkDlg">
   <div class="dlg-head"><span id="walkPos"></span><button class="secondary" id="walkClose">Lukk</button></div>
   <div class="walk">
-    <div class="walk-img"><img id="walkImg" src="" alt="" /></div>
+    <div class="walk-view">
+      <!-- Lappen fyrst og stor. Det arkivaren skal gjere her er å sjå om ID-en stemmer, og i
+           heile motivet er teksten nokre pikslar høg. Motivet står under, for det er der ein
+           ser at bilete og ID høyrer saman. -->
+      <figure class="walk-lapp" id="walkLapp" hidden>
+        <img id="walkLappImg" src="" alt="" />
+        <figcaption>Dette leste OCR-en ID-en frå</figcaption>
+      </figure>
+      <div class="walk-img"><img id="walkImg" src="" alt="" /></div>
+    </div>
     <div class="walk-side">
       <div class="field">
         <label for="walkId">Foto-ID (nytt namn)</label>
@@ -443,8 +459,11 @@ api('/api/status').then(s => {
 // dobbel pikseltettleik, og gjer at ei side med mange rader blir klar med ein gong.
 // `rotate` er vinkelen som gjorde ID-en leseleg for OCR-en, og backenden snur biletet same
 // vegen, slik at ei loddrett tekststripe står rett veg i gjennomgangen.
-const thumb = (path, maxDim = 220, rotate = 0) =>
-  '/api/thumb?path=' + encodeURIComponent(path) + '&max_dim=' + maxDim + (rotate ? '&rotate=' + rotate : '');
+// `crop` er `id_boks` frå rapporten. Er han med, får me utsnittet av ID-lappen i staden for
+// heile motivet, dekoda større av backenden slik at teksten blir skarp.
+const thumb = (path, maxDim = 220, rotate = 0, crop = '') =>
+  '/api/thumb?path=' + encodeURIComponent(path) + '&max_dim=' + maxDim + (rotate ? '&rotate=' + rotate : '')
+  + (crop ? '&crop=' + encodeURIComponent(crop) : '');
 
 // ---- Mappeveljar ----
 const FOLDER_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0A3258" stroke-width="2" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
@@ -911,6 +930,15 @@ function showWalk() {
     `Bilete ${reviewOffset + walkIndex + 1} av ${reviewTotal}` + (rot ? `  ·  vist snudd ${rot}°` : '');
   $('walkImg').src = thumb(r.original_jpg, 1400, rot);
   $('walkImg').alt = name;
+  // Rader frå ei eldre køyring har ingen boks, og rader utan ID har ingenting å zoome til.
+  const boks = r.id_boks || '';
+  $('walkLapp').hidden = !boks;
+  if (boks) {
+    $('walkLappImg').src = thumb(r.original_jpg, 1100, rot, boks);
+    $('walkLappImg').alt = 'ID-lappen på ' + name;
+  } else {
+    $('walkLappImg').removeAttribute('src');
+  }
   $('walkName').textContent = name;
   $('walkOcr').textContent = r.ocr_text || '(OCR-en fann ingen tekst i dette biletet)';
   $('walkId').value = r.foto_id || '';

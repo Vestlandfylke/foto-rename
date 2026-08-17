@@ -69,7 +69,7 @@ REASONS = {
     STATUS_OK: "ID lesen i motivet, og nytt namn er klart.",
     STATUS_REVIEW_NO_ID: (
         "Fann ingen SFFf-ID i motivet. Teksten er truleg uleseleg eller for falma, "
-        "eller står i ein orientering som ikkje gav treff."
+        "eller står ikkje i biletet i det heile."
     ),
     STATUS_REVIEW_UNEXPECTED: (
         "ID funnen, men taldelen byrjar ikkje på 8 eller 9. Må vurderast manuelt "
@@ -106,6 +106,10 @@ CSV_FIELDS = [
     "original_jpg",
     "ocr_text",
     "rotation",
+    # Kvar i biletet ID-en stod, som «x0,y0,x1,y1» i brøkdelar av det oppretta biletet.
+    # Gjennomgangen bruker han til å vise lappen stor, i staden for å vise heile motivet der
+    # teksten er nokre pikslar høg.
+    "id_boks",
     "raw_id",
     "foto_id",
     "new_basename",
@@ -133,6 +137,27 @@ FOLDER_LIST_FIELDS = [
 COMPARE_FIELDS = [
     "fil", "foto_id_a", "foto_id_b", "status_a", "status_b", "rotasjon_a", "rotasjon_b", "avvik",
 ]
+
+
+def format_rect(rect: Optional[tuple[float, float, float, float]]) -> str:
+    """Boksen som «x0,y0,x1,y1» til rapporten. Fire desimalar er under éin piksel på eit skann."""
+    if not rect:
+        return ""
+    return ",".join(f"{max(0.0, min(1.0, v)):.4f}" for v in rect)
+
+
+def parse_rect(text: str) -> Optional[tuple[float, float, float, float]]:
+    """Les boksen tilbake frå rapporten. Ei rad frå ei eldre køyring har ingen, og då er svaret None."""
+    delar = [d for d in (text or "").split(",") if d.strip()]
+    if len(delar) != 4:
+        return None
+    try:
+        x0, y0, x1, y1 = (float(d) for d in delar)
+    except ValueError:
+        return None
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return (x0, y0, x1, y1)
 
 
 def reason_for(status: str, error: str = "") -> str:
@@ -288,12 +313,38 @@ class TextField:
     `rotation` er kor mange gradar biletet må snuast for at feltet skal stå leseleg, altså
     svaret på kva veg denne teksten står. Ein lapp langs kanten gir 90 eller 270, ein lapp som
     står opp ned gir 180.
+
+    `box` er dei fire hjørna i biletet me leste, og blir brukt til å avgjere kva felt som ligg
+    inntil kvarandre. `rect` er det same feltet som (x0, y0, x1, y1) i brøkdelar av biletet,
+    men rekna i det biletet som er snudd `rotation` gradar, altså slik brukaren får sjå det.
+    Difor kan grensesnittet zoome rett inn på lappen utan å rekne om noko.
     """
 
     text: str
     score: float
     box: list
     rotation: int
+    rect: tuple[float, float, float, float]
+
+
+def _fraction_rect(box, size: tuple[int, int], rotation: int) -> tuple[float, float, float, float]:
+    """
+    Gjer eit tekstfelt om til (x0, y0, x1, y1) i brøkdelar av det oppretta biletet.
+
+    Rotasjonen som gjer feltet leseleg flyttar samtidig koordinatane, sidan biletet blir snudd
+    om lag hjørnet. Pillow snur mot klokka, så 90 gradar sender høgre kant opp.
+    """
+    w, h = size
+    x0, x1, y0, y1 = _extent(box)
+    u0, u1 = min(x0 / w, x1 / w), max(x0 / w, x1 / w)
+    v0, v1 = min(y0 / h, y1 / h), max(y0 / h, y1 / h)
+    if rotation == 90:
+        return (v0, 1.0 - u1, v1, 1.0 - u0)
+    if rotation == 180:
+        return (1.0 - u1, 1.0 - v1, 1.0 - u0, 1.0 - v0)
+    if rotation == 270:
+        return (1.0 - v1, u0, 1.0 - v0, u1)
+    return (u0, v0, u1, v1)
 
 
 def _side(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -365,7 +416,7 @@ def read_fields(engine, img: Image.Image) -> list[TextField]:
         rotation = 270 if uprights[i] else 0
         if flipped:
             rotation = (rotation + 180) % 360
-        fields.append(TextField(text, score, box, rotation))
+        fields.append(TextField(text, score, box, rotation, _fraction_rect(box, img.size, rotation)))
     return fields
 
 
@@ -377,6 +428,7 @@ class IdCandidate:
     rotation: int
     score: float
     whole: bool  # ID-en stod heil i eitt tekstfelt
+    rect: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
 
     @property
     def rank(self) -> tuple[int, float]:
@@ -403,7 +455,7 @@ def _candidates_in(fields: list[TextField], pattern: re.Pattern, base_rotation: 
         if m:
             found.append(IdCandidate(
                 m.group(1), m.group(2), m.group(0),
-                (base_rotation + field.rotation) % 360, field.score, True,
+                (base_rotation + field.rotation) % 360, field.score, True, field.rect,
             ))
 
     sequences = [(f, m.group(1)) for f in fields if (m := SEQUENCE_FIELD_PATTERN.match(f.text))]
@@ -414,11 +466,20 @@ def _candidates_in(fields: list[TextField], pattern: re.Pattern, base_rotation: 
         for other, num2 in sequences:
             if other is field or not _adjacent(field.box, other.box):
                 continue
+            # Begge delane skal med i utsnittet, slik at eit menneske kan sjå at løpenummeret på
+            # klistrelappen verkeleg høyrer til taldelen. Står dei to felta ulikt i biletet, er
+            # ikkje eit felles utsnitt meiningsfullt, og då viser me taldelen.
+            rect = _union(field.rect, other.rect) if field.rotation == other.rotation else field.rect
             found.append(IdCandidate(
                 m.group(1), num2, f"{field.text.strip()} + {other.text.strip()}",
-                (base_rotation + field.rotation) % 360, min(field.score, other.score), False,
+                (base_rotation + field.rotation) % 360, min(field.score, other.score), False, rect,
             ))
     return found
+
+
+def _union(a: tuple[float, float, float, float],
+           b: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
+    return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
 
 
 @dataclass
@@ -428,6 +489,7 @@ class OcrOutcome:
     raw_id: Optional[str]
     num1: Optional[str]
     num2: Optional[str]
+    rect: Optional[tuple[float, float, float, float]] = None
 
 
 def ocr_image(engine, path: Path, cfg: OcrConfig) -> OcrOutcome:
@@ -465,7 +527,8 @@ def ocr_loaded(engine, base: Image.Image, cfg: OcrConfig) -> OcrOutcome:
     if best is None:
         return OcrOutcome(text=first_text, rotation=None, raw_id=None, num1=None, num2=None)
     return OcrOutcome(
-        text=best_text, rotation=best.rotation, raw_id=best.raw, num1=best.num1, num2=best.num2
+        text=best_text, rotation=best.rotation, raw_id=best.raw, num1=best.num1, num2=best.num2,
+        rect=best.rect,
     )
 
 
@@ -530,6 +593,7 @@ def process_one(engine, jpg: Path, cfg: OcrConfig, tiff: Optional[Path] = None,
             "original_jpg": str(jpg),
             "ocr_text": outcome.text[:500].replace("\n", " "),
             "rotation": "" if outcome.rotation is None else str(outcome.rotation),
+            "id_boks": format_rect(outcome.rect),
             "raw_id": outcome.raw_id or "",
             "foto_id": cls.foto_id or "",
             "new_basename": cls.new_basename or "",
@@ -543,6 +607,7 @@ def process_one(engine, jpg: Path, cfg: OcrConfig, tiff: Optional[Path] = None,
             "original_jpg": str(jpg),
             "ocr_text": "",
             "rotation": "",
+            "id_boks": "",
             "raw_id": "",
             "foto_id": "",
             "new_basename": "",
@@ -568,6 +633,7 @@ def orphan_tiff_row(tiff: Path) -> dict:
         "original_jpg": str(tiff),
         "ocr_text": "",
         "rotation": "",
+        "id_boks": "",
         "raw_id": "",
         "foto_id": "",
         "new_basename": "",
