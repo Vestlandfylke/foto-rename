@@ -2,12 +2,13 @@
 // ABOUTME: Pakkane blir lagde i ei brukar-skrivbar mappe utanfor programmappa, sjå paths.gpuSiteDir().
 "use strict";
 
-const { BrowserWindow, app } = require("electron");
+const { BrowserWindow } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
 const { APP_ICON, gpuSiteDir, resolvePython } = require("./paths");
+const { updateSettings } = require("./settings");
 
 const IS_WINDOWS = process.platform === "win32";
 // Same CUDA-serie som setup.ps1 og README brukar for browser-appen. CUDA 12.8 er
@@ -55,29 +56,6 @@ function hasNvidiaGpu() {
     probe.once("error", () => resolve(false));
     probe.once("exit", (code) => resolve(code === 0));
   });
-}
-
-function settingsPath() {
-  return path.join(app.getPath("userData"), "settings.json");
-}
-
-function readSettings() {
-  try {
-    return JSON.parse(fs.readFileSync(settingsPath(), "utf8"));
-  } catch {
-    return {};
-  }
-}
-
-function updateSettings(patch) {
-  const next = { ...readSettings(), ...patch };
-  try {
-    fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
-    fs.writeFileSync(settingsPath(), JSON.stringify(next, null, 2), "utf8");
-  } catch {
-    /* innstillingar er ein bonus, ikkje kritisk */
-  }
-  return next;
 }
 
 function createProgressWindow(parent) {
@@ -211,6 +189,4 @@ module.exports = {
   install,
   isInstalled,
   isOutdated,
-  readSettings,
-  updateSettings,
 };

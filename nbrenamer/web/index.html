@@ -45,6 +45,18 @@
      «Lagre endringar» ned på ei ny rad. Skiljestreken forsvinn med teksten. */
   .statusbar #r_counts { border-left: 1px solid var(--border); padding-left: 10px; }
   .statusbar #r_counts:empty { display: none; }
+  /* Ein knapp som ser ut som ein lenke, slik at statuslinja held seg til éin visuell stil. */
+  .linklike { flex: 0 0 auto; background: none; border: 0; padding: 0; font: inherit; color: var(--brand); cursor: pointer; text-decoration: underline; }
+  .linklike:hover { color: var(--accent); }
+  #endringarDlg { width: min(760px, 92vw); }
+  .endringar { padding: 4px 18px 18px; max-height: 70vh; overflow-y: auto; }
+  .endringar section { padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .endringar section:last-child { border-bottom: 0; }
+  .endringar h3 { margin: 0 0 2px; font-size: 14px; color: var(--brand); }
+  .endringar .nytt { font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; }
+  .endringar .kvar { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+  .endringar ul { margin: 0; padding-left: 20px; }
+  .endringar li { margin-bottom: 5px; line-height: 1.5; }
   .badge { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
   .badge::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
   .badge.gpu { color: var(--ok); }
@@ -343,8 +355,15 @@
   <span id="sb_report">Ingen rapport lasta</span>
   <span id="r_counts"></span>
   <span class="grow"></span>
+  <button type="button" class="linklike" id="sb_endringar">Kva er nytt</button>
+  <span class="sep"></span>
   <span id="gpuBadge" class="badge cpu">sjekkar maskinvare ...</span>
 </footer>
+
+<dialog id="endringarDlg">
+  <div class="dlg-head"><span>Kva er nytt i NB foto-namngivar</span><button class="secondary" id="endringarClose">Lukk</button></div>
+  <div class="endringar" id="endringarBody"></div>
+</dialog>
 
 <dialog id="confirmDlg">
   <div class="dlg-head"><span>Klar til å køyre omdøypinga?</span><button class="secondary" id="confirmNo">Avbryt</button></div>
@@ -1223,6 +1242,72 @@ $('e_again').onclick = klarForNyKøyring;
 // stod grå etter ei ferdig kopiering.
 ['e_report', 'e_output', 'e_mode', 'e_moveOk', 'e_year', 'e_over'].forEach(id =>
   $(id).addEventListener('change', klarForNyKøyring));
+
+// ---- Kva er nytt ----
+// Endringsloggen ligg i endringar.json ved sida av denne fila, slik at han kan rettast utan at
+// noko må byggjast på nytt, og slik at både desktop-appen og nettlesarversjonen viser det same.
+// Lista blir vist av seg sjølv fyrste gongen ein ny versjon blir opna, for ei oppdatering
+// brukaren ikkje veit om er ei oppdatering som ikkje hjelper nokon.
+const SIST_SETTE = 'nbr.sisteEndringsnotat';
+let endringar = null;
+
+async function hentEndringar() {
+  if (endringar) return endringar;
+  const res = await fetch('endringar.json');
+  if (!res.ok) throw new Error(`Fann ikkje endringsloggen (${res.status})`);
+  endringar = (await res.json()).versjonar || [];
+  return endringar;
+}
+
+function visEndringar(versjonar, nyaste) {
+  $('endringarBody').replaceChildren(...versjonar.map(v => {
+    const sek = document.createElement('section');
+    const h = document.createElement('h3');
+    h.textContent = v.overskrift || `Versjon ${v.versjon}`;
+    if (v.versjon === nyaste) {
+      const merke = document.createElement('span');
+      merke.className = 'nytt';
+      merke.textContent = ' nytt';
+      h.append(merke);
+    }
+    const kvar = document.createElement('p');
+    kvar.className = 'kvar';
+    kvar.textContent = `Versjon ${v.versjon} · ${v.dato}`;
+    const ul = document.createElement('ul');
+    // textContent, ikkje innerHTML: teksten kjem frå ei fil og skal vere tekst.
+    ul.append(...(v.punkt || []).map(p => { const li = document.createElement('li'); li.textContent = p; return li; }));
+    sek.append(h, kvar, ul);
+    return sek;
+  }));
+  if (!$('endringarDlg').open) $('endringarDlg').showModal();
+}
+
+async function opneEndringar() {
+  try {
+    const versjonar = await hentEndringar();
+    visEndringar(versjonar, versjonar[0]?.versjon);
+    if (versjonar[0]) localStorage.setItem(SIST_SETTE, versjonar[0].versjon);
+  } catch (e) {
+    setStatusState(e.message);
+  }
+}
+
+$('sb_endringar').onclick = opneEndringar;
+$('endringarClose').onclick = () => $('endringarDlg').close();
+window.nbrDesktop?.onShowChanges?.(opneEndringar);
+
+// Fyrste opninga etter ei oppdatering skal vise lista. I desktop-appen er det hovudprosessen som
+// avgjer det, sidan han hugsar versjonen mellom køyringar: backenden får ny port kvar oppstart, og
+// då er localStorage her tom uansett. I browser-appen står porten fast, og då held denne sjekken.
+if (!window.nbrDesktop) {
+  (async () => {
+    try {
+      const versjonar = await hentEndringar();
+      const nyaste = versjonar[0]?.versjon;
+      if (nyaste && localStorage.getItem(SIST_SETTE) !== nyaste) opneEndringar();
+    } catch { /* Endringsloggen er ikkje viktig nok til å plage brukaren om han manglar. */ }
+  })();
+}
 </script>
 </body>
 </html>

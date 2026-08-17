@@ -29,4 +29,10 @@ contextBridge.exposeInMainWorld("nbrDesktop", {
 
   /** Varsel når ein lang jobb er ferdig. Blir berre vist om vindauget ikkje er framme. */
   notify: (title, body) => ipcRenderer.send("notify", { title, body }),
+
+  /**
+   * Melder frå når brukaren vel Hjelp > Kva er nytt, slik at sida kan opne endringsloggen.
+   * Sjølve lista bur i web-UI-et, ikkje her, for då ser nettlesarversjonen den same.
+   */
+  onShowChanges: (callback) => ipcRenderer.on("vis-endringar", () => callback()),
 });

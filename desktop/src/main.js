@@ -10,6 +10,7 @@ const net = require("node:net");
 const path = require("node:path");
 
 const gpu = require("./gpu");
+const settings = require("./settings");
 const updater = require("./updater");
 const { APP_ICON, PROJECT_ROOT, backendRoot, gpuSiteDir, resolvePython } = require("./paths");
 
@@ -187,13 +188,25 @@ async function prepareQuit() {
  * leggje dialogar oppå kvarandre, og ei ny versjon kan vere det brukaren treng aller fyrst.
  */
 async function runStartupTasks() {
+  maybeShowChanges();
   await updater.check({ parentWindow: mainWindow, silent: true, prepareQuit, log: backendLog });
   await maybeOfferGpu();
 }
 
+/**
+ * Viser «Kva er nytt» fyrste gongen ein versjon blir opna. Merket blir lagra i settings.json og
+ * ikkje i localStorage i sida, for backenden bind seg til ein ledig port ved kvar oppstart. Sida
+ * får då ny origin kvar gong, og med den ei tom lagring, så lista ville komme opp støtt.
+ */
+function maybeShowChanges() {
+  if (settings.readSettings().sisteEndringsnotat === app.getVersion()) return;
+  settings.updateSettings({ sisteEndringsnotat: app.getVersion() });
+  mainWindow?.webContents.send("vis-endringar");
+}
+
 /** Spør éin gong om brukaren vil slå på GPU, når maskina har eit NVIDIA-kort som ikkje er i bruk. */
 async function maybeOfferGpu() {
-  if (gpu.isInstalled() || gpu.readSettings().gpuOfferDismissed) return;
+  if (gpu.isInstalled() || settings.readSettings().gpuOfferDismissed) return;
 
   const status = await fetchStatus();
   if (!status || status.gpu_available) return;
@@ -215,7 +228,7 @@ async function maybeOfferGpu() {
     cancelId: 1,
   });
 
-  if (checkboxChecked) gpu.updateSettings({ gpuOfferDismissed: true });
+  if (checkboxChecked) settings.updateSettings({ gpuOfferDismissed: true });
   if (response === 0) await runGpuInstall();
 }
 
@@ -561,6 +574,11 @@ function buildMenu() {
                 log: backendLog,
               }),
           },
+          {
+            label: "Kva er nytt ...",
+            click: () => mainWindow?.webContents.send("vis-endringar"),
+          },
+          { type: "separator" },
           {
             label: "Opne loggmappa",
             click: () => shell.openPath(app.getPath("logs")),

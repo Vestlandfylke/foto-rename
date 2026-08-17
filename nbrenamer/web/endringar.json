@@ -1,0 +1,92 @@
+{
+  "_om": "Endringslogg vist i appen under Hjelp > Kva er nytt. Nyaste versjon fyrst. Skriv for ein arkivar: kva som er annleis å bruke, ikkje kva som er endra i koden. Legg til ei ny blokk øvst same dag som versjonen blir lagd ut.",
+  "versjonar": [
+    {
+      "versjon": "1.1.6",
+      "dato": "2026-08-17",
+      "overskrift": "Appen finn ID-en uansett kva veg lappen står",
+      "punkt": [
+        "Før måtte appen snu heile biletet og prøve seg fram for å finne ID-en. No finn han kvar tekstbit i biletet for seg og les han rett veg. Lappar som står loddrett langs kanten, og tekst som står opp ned, blir lesne like godt som tekst som står rett.",
+        "Eit løpenummer som stod opp ned kunne bli lese feil, til dømes 7000 i staden for 0004. Det er retta.",
+        "Står ID-en to stader i biletet, både handskriven i motivet og trykt på ein lapp, vel appen no den som er tryggast lesen i staden for den han fann fyrst.",
+        "Lesinga er raskare: rundt 0,6 sekund per bilete mot 1 sekund før. På ti tusen bilete er det nesten to timar spart.",
+        "I gjennomgangen står no eit stort utsnitt av sjølve ID-lappen øvst, så du ser med ein gong kva som står der i staden for å leite etter teksten i motivet.",
+        "Under Avanserte val er dei fire valfelta for leseretning bytte med eitt, sidan appen no finn retninga sjølv.",
+        "Ny meny: Hjelp > Kva er nytt, som er denne lista."
+      ]
+    },
+    {
+      "versjon": "1.1.5",
+      "dato": "2026-08-14",
+      "overskrift": "Kvittering på kva som kom på plass",
+      "punkt": [
+        "Steg 3 lagar no ei kvitteringsliste, omdøypte.csv, med kvar fil som kom på plass, kva ho heitte før, kva ho heiter no og kvar ho ligg. Lista blir skriven undervegs, så ho er komplett fram til avbrotet sjølv om ei køyring blir broten.",
+        "Maskina sovnar ikkje lenger midt i ei lang køyring. Skjermen kan slå seg av som normalt, men jobben held fram."
+      ]
+    },
+    {
+      "versjon": "1.1.4",
+      "dato": "2026-08-14",
+      "overskrift": "Excel, nye skjermkort, og flytting i staden for kopiering",
+      "punkt": [
+        "Rapporten opnar rett i Excel, med norske bokstavar og kolonnane på plass.",
+        "Skjermkort av nyaste type (RTX PRO og GeForce 50-serien) blir no støtta. Har du installert GPU-pakkane frå ein tidlegare versjon, tilbyr appen å hente dei på nytt.",
+        "I steg 3 kan du velje å flytte originalane i staden for å kopiere dei. Det sparer plass når materialet er fleire terabyte, og du må stadfeste valet, sidan originalane då blir borte frå kjeldemappa.",
+        "Lesinga blei fire gonger raskare.",
+        "TIFF-filer utan JPEG blir no med i rapporten og følgjer med til _manuell, i staden for å bli liggjande att i kjeldemappa.",
+        "Kvar mappe blir gjord opp mot disken i ei eiga liste, så du kan sjå om ei mappe ikkje går opp.",
+        "Appen oppdagar halve kopiar, til dømes når ein nettverksdisk fell ut midt i ei kopiering, og filer som ikkje kom med.",
+        "Ei lesing stoppar ikkje lenger heilt dersom éin del av jobben feilar.",
+        "Startknappen i steg 3 blir klar igjen når du endrar vala, så du kan køyre på nytt utan å starte appen om."
+      ]
+    },
+    {
+      "versjon": "1.1.3",
+      "dato": "2026-08-12",
+      "overskrift": "Trygg omdøyping, og snarvegar som blir verande",
+      "punkt": [
+        "Steg 3 seier frå før det er for seint dersom det ikkje er plass på disken, og ei enkelt fil som feilar stoppar ikkje lenger heile jobben.",
+        "Snarvegen på skrivebordet og appikonet blir verande gjennom ei oppdatering."
+      ]
+    },
+    {
+      "versjon": "1.1.2",
+      "dato": "2026-08-12",
+      "overskrift": "Nytt appikon",
+      "punkt": [
+        "Appen har fått eige ikon i fylkeskommunen sin farge, i menyen, på skrivebordet og i installasjonsfila."
+      ]
+    },
+    {
+      "versjon": "1.1.1",
+      "dato": "2026-08-11",
+      "overskrift": "Oppdateringar verkar",
+      "punkt": [
+        "Retta at appen ikkje fann nye versjonar når du valde Hjelp > Sjekk etter oppdateringar."
+      ]
+    },
+    {
+      "versjon": "1.1.0",
+      "dato": "2026-08-11",
+      "overskrift": "Gjennomgangsmodus og eit tryggare steg 3",
+      "punkt": [
+        "Nytt i steg 2: Start gjennomgang viser eitt bilete om gongen, snudd rett veg, med ID-feltet i fokus. Enter går vidare, Shift og Enter går tilbake, Ctrl og S lagrar. Rettinga går utan å ta hendene frå tastaturet.",
+        "Statusane har fått lesbare namn, og kvart bilete har ei grunngjeving som forklarer kvifor det treng handarbeid.",
+        "Heile rapporten er tilgjengeleg i steg 2, ikkje berre dei 500 fyrste radene.",
+        "Appen varslar når ein Foto-ID ikkje passar mønsteret, og når same ID er brukt på fleire bilete. Duplikat blir sjekka over heile rapporten, ikkje berre den sida du ser.",
+        "Steg 3 spør om stadfesting og viser kva som kjem til å skje før noko blir gjort, og tek deg til resultatet etterpå.",
+        "Lange køyringar viser tid att, framdrift i oppgåvelinja, og varslar når dei er ferdige.",
+        "Bla gjennom bruker no systemdialogen i Windows, som er mykje raskare.",
+        "Grensesnittet ser ut som eit program i staden for ei nettside."
+      ]
+    },
+    {
+      "versjon": "1.0.0",
+      "dato": "2026-08-11",
+      "overskrift": "Fyrste versjon",
+      "punkt": [
+        "Les ID-en i dei skanna bileta, føreslår nye filnamn etter regelen for Foto-ID, og lagar dei omdøypte filene i tre steg. All lesing skjer lokalt på maskina, ingenting blir sendt ut."
+      ]
+    }
+  ]
+}
