@@ -262,7 +262,7 @@
               <span>Loddrett<em>høgre kant</em></span>
             </label>
             <label class="rot-card">
-              <input type="checkbox" class="rot" value="180" />
+              <input type="checkbox" class="rot" value="180" checked />
               <svg viewBox="0 0 48 40" width="48" height="40" aria-hidden="true">
                 <rect x="3" y="7" width="42" height="26" rx="2" class="foto" />
                 <rect x="3" y="7" width="42" height="8" class="stripe" />
@@ -272,7 +272,7 @@
             </label>
           </div>
           <span class="help" id="d_rot_sum"></span>
-          <span class="help">Appen prøver desse i tur og orden og stoppar ved fyrste treff. Kvar ekstra retning er eit nytt forsøk, men berre på bilete som ikkje gav treff i dei føregåande.</span>
+          <span class="help">Appen prøver desse i tur og orden. Blir ID-en lesen heil og trygt, stoppar han der. Elles les han vidare og samanliknar, for står ID-en både handskriven i motivet og maskinskriven på ein lapp på tvers, er det lappen som gir det beste treffet.</span>
         </div>
         <div class="check-field">
           <label class="check-row"><input type="checkbox" id="d_auto" checked /><span>Forsterk svak tekst (autokontrast)</span></label>
@@ -666,7 +666,7 @@ const valdeRetningar = () => [...document.querySelectorAll('.rot:checked')].map(
 function updateRotations(melding) {
   const tal = valdeRetningar().length;
   $('d_rot_sum').textContent = melding
-    || (tal === 1 ? 'Appen prøver éi retning per bilete.' : `Appen prøver opptil ${tal} retningar per bilete.`);
+    || (tal === 1 ? 'Appen prøver éi retning per bilete.' : `Appen prøver opptil ${tal} retningar per bilete, og vel det beste treffet.`);
   $('d_rot_sum').className = melding ? 'help warn' : 'help';
 }
 

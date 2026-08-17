@@ -21,8 +21,30 @@ Image.MAX_IMAGE_PIXELS = None
 # ta prosessen. Ei fil skal bli ei feilrad, ikkje ein død lesejobb.
 MAX_PIXELS = 300_000_000
 
-DEFAULT_ID_PATTERN = r"SFF[Ff]?\s*[-\u2013]?\s*(\d{4,6})\s*[.,]\s*(\d{2,4})"
-DEFAULT_ROTATIONS = "0,90,270"
+# Mønsteret blir køyrt mot eitt tekstfelt frå OCR-en om gongen, ikkje mot heile teksten slått
+# saman. Skiljeteiknet mellom taldelen og løpenummeret kan vere punktum, komma eller bindestrek,
+# for lappane er laga over mange tiår. Bindestreken og f-en i utdata lagar me sjølve, så lappen
+# treng korkje «SFFf» eller punktum for å bli lesen rett.
+DEFAULT_ID_PATTERN = r"SFF[Ff]?\s*[-\u2013]?\s*(\d{4,6})\s*[.,\-\u2013]\s*(\d{2,4})"
+
+# Reglane for å binde saman to tekstfelt er ikkje konfigurerbare, for dei kviler på forma på
+# SFF-lappen: taldelen står saman med «SFF», og løpenummeret er fire reine siffer. Eit felt som
+# «SFFf-94263.0» blir med vilje ikkje godteke som taldel, for der har OCR-en delt løpenummeret
+# midt i, og då ville me bunde det halve til noko anna.
+SERIES_TAIL_PATTERN = re.compile(r"SFF[Ff]?\s*[-\u2013]?\s*(\d{4,6})\s*[.,\-\u2013]?\s*$", re.IGNORECASE)
+SEQUENCE_FIELD_PATTERN = re.compile(r"^\s*(\d{4})\s*$")
+
+# Kor nær to tekstfelt må liggje for å høyre saman, målt i tekstens eiga tjukkleik. Målt på ekte
+# lappar ligg avstanden mellom taldel og løpenummer på 24 til 74 pikslar der teksten er 55 til 85
+# tjukk, mens eit årstal som ikkje høyrer til ligg lenger unna eller forskjøve til sida.
+NEIGHBOUR_GAP = 1.5
+
+# Ein heil ID med minst denne tryggleiksskåren er god nok til at me sluttar å prøve fleire
+# retningar. Under grensa les me vidare, for då kan ei anna retning ha eit betre bilete av
+# den same lappen. Målt på ekte materiale ligg reine lappar på 0,96 og oppover.
+STRONG_SCORE = 0.95
+
+DEFAULT_ROTATIONS = "0,90,270,180"
 DEFAULT_MAX_DIM = 2048
 DEFAULT_PREFIX = "SFFf"
 TIFF_SUFFIXES = (".tif", ".tiff")
@@ -116,13 +138,13 @@ def reason_for(status: str, error: str = "") -> str:
 class OcrConfig:
     pattern: re.Pattern
     max_dim: int = DEFAULT_MAX_DIM
-    rotations: tuple[int, ...] = (0, 90, 270)
+    rotations: tuple[int, ...] = (0, 90, 270, 180)
     autocontrast: bool = True
     prefix: str = DEFAULT_PREFIX
 
     @classmethod
     def make(cls, pattern_str=DEFAULT_ID_PATTERN, max_dim=DEFAULT_MAX_DIM,
-             rotations="0,90,270", autocontrast=True, prefix=DEFAULT_PREFIX) -> "OcrConfig":
+             rotations=DEFAULT_ROTATIONS, autocontrast=True, prefix=DEFAULT_PREFIX) -> "OcrConfig":
         rots = tuple(int(r) for r in str(rotations).split(",")) if isinstance(rotations, str) else tuple(rotations)
         return cls(re.compile(pattern_str, re.IGNORECASE), int(max_dim), rots, bool(autocontrast), prefix)
 
@@ -219,6 +241,100 @@ def _result_texts(result) -> list[str]:
     return [str(t) for t in txts]
 
 
+def _result_scores(result, n: int) -> list[float]:
+    """OCR-en si eiga tryggleiksskår per tekstfelt. Manglar ho, reknar me alt som sikkert."""
+    scores = getattr(result, "scores", None) or []
+    return [float(scores[i]) if i < len(scores) else 1.0 for i in range(n)]
+
+
+def _extent(box) -> tuple[float, float, float, float]:
+    """Omskrivande rektangel (x0, x1, y0, y1) for eit firkanta OCR-felt."""
+    xs = [float(p[0]) for p in box]
+    ys = [float(p[1]) for p in box]
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def _overlap(a0: float, a1: float, b0: float, b1: float) -> float:
+    return min(a1, b1) - max(a0, b0)
+
+
+def _gap(a0: float, a1: float, b0: float, b1: float) -> float:
+    return max(a0 - b1, b0 - a1, 0.0)
+
+
+def _adjacent(box_a, box_b) -> bool:
+    """
+    Ligg dei to tekstfelta inntil kvarandre, som to delar av same lappen?
+
+    Lappen kan stå vassrett eller loddrett i biletet sjølv etter at me har rotert, for han står
+    ofte på tvers av motivet. Difor godtek me både to felt på same linje og to felt i same
+    kolonne, og me krev ikkje at løpenummeret kjem etter taldelen: sett gjennom ei rotasjon kan
+    det like godt liggje over. Det som avgjer er at dei flankerer kvarandre og er nær.
+    """
+    ax0, ax1, ay0, ay1 = _extent(box_a)
+    bx0, bx1, by0, by1 = _extent(box_b)
+    same_line = (
+        _overlap(ay0, ay1, by0, by1) >= 0.5 * min(ay1 - ay0, by1 - by0)
+        and _gap(ax0, ax1, bx0, bx1) <= NEIGHBOUR_GAP * min(ay1 - ay0, by1 - by0)
+    )
+    same_column = (
+        _overlap(ax0, ax1, bx0, bx1) >= 0.5 * min(ax1 - ax0, bx1 - bx0)
+        and _gap(ay0, ay1, by0, by1) <= NEIGHBOUR_GAP * min(ax1 - ax0, bx1 - bx0)
+    )
+    return same_line or same_column
+
+
+@dataclass
+class IdCandidate:
+    num1: str
+    num2: str
+    raw: str
+    rotation: int
+    score: float
+    whole: bool  # ID-en stod heil i eitt tekstfelt
+
+    @property
+    def rank(self) -> tuple[int, float]:
+        """
+        Ein heil ID slår alltid ein som er sett saman av to felt, uansett skår.
+
+        Det er denne rekkjefølgja som gjer at ein lapp som blir lesen «SFF93301-0004» i éi
+        retning vinn over dei same sifra lesne som «SFF93301-» pluss «7000» i ei anna: begge
+        er OCR-en trygg på, men berre den eine har OCR-en sjølv sett samanhengen i.
+        """
+        return (1 if self.whole else 0, self.score)
+
+
+def _candidates_in(result, pattern: re.Pattern, rot: int) -> list[IdCandidate]:
+    """Alle ID-kandidatar i eitt OCR-resultat, både heile og slike som må settast saman."""
+    txts = _result_texts(result)
+    scores = _result_scores(result, len(txts))
+    boxes = getattr(result, "boxes", None)
+    found: list[IdCandidate] = []
+
+    for i, text in enumerate(txts):
+        m = pattern.search(text)
+        if m:
+            found.append(IdCandidate(m.group(1), m.group(2), m.group(0), rot, scores[i], True))
+
+    # Utan koordinatar kan me ikkje vite kva som høyrer saman, og då gissar me ikkje.
+    if boxes is None or len(boxes) < len(txts):
+        return found
+
+    sequences = [(i, m.group(1)) for i, text in enumerate(txts) if (m := SEQUENCE_FIELD_PATTERN.match(text))]
+    for i, text in enumerate(txts):
+        m = SERIES_TAIL_PATTERN.search(text)
+        if not m:
+            continue
+        for j, num2 in sequences:
+            if j == i or not _adjacent(boxes[i], boxes[j]):
+                continue
+            found.append(IdCandidate(
+                m.group(1), num2, f"{text.strip()} + {txts[j].strip()}", rot, min(scores[i], scores[j]), False
+            ))
+    return found
+
+
 @dataclass
 class OcrOutcome:
     text: str
@@ -229,19 +345,35 @@ class OcrOutcome:
 
 
 def ocr_image(engine, path: Path, cfg: OcrConfig) -> OcrOutcome:
-    """OCR-ar biletet. Prøver kvar rotasjon til ID-mønsteret blir funne."""
+    """
+    OCR-ar biletet i kvar retning og vel den beste ID-kandidaten.
+
+    Same ID-en står ofte to stader på eit skann, handskriven i motivet og maskinskriven på ein
+    lapp langs kanten, og lappen ligg gjerne på tvers. Difor les me vidare i fleire retningar i
+    staden for å ta det fyrste treffet: ein lapp som står loddrett gir eit mykje betre treff når
+    biletet er snudd. Ei retning som gir ein heil, trygg ID er likevel god nok, og då stoppar me,
+    slik at reine lappar kostar like lite som før.
+    """
     base = load_base_image(path, cfg.max_dim, cfg.autocontrast)
     first_text = ""
+    best: Optional[IdCandidate] = None
+    best_text = ""
     for rot in cfg.rotations:
         img = base.rotate(rot, expand=True) if rot else base
         result = engine(_to_bgr(img))
         text = "  ".join(_result_texts(result))
         if not first_text:
             first_text = text
-        m = cfg.pattern.search(text)
-        if m:
-            return OcrOutcome(text=text, rotation=rot, raw_id=m.group(0), num1=m.group(1), num2=m.group(2))
-    return OcrOutcome(text=first_text, rotation=None, raw_id=None, num1=None, num2=None)
+        for cand in _candidates_in(result, cfg.pattern, rot):
+            if best is None or cand.rank > best.rank:
+                best, best_text = cand, text
+        if best is not None and best.whole and best.score >= STRONG_SCORE:
+            break
+    if best is None:
+        return OcrOutcome(text=first_text, rotation=None, raw_id=None, num1=None, num2=None)
+    return OcrOutcome(
+        text=best_text, rotation=best.rotation, raw_id=best.raw, num1=best.num1, num2=best.num2
+    )
 
 
 @dataclass

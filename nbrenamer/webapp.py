@@ -25,6 +25,7 @@ from .core import (
     DEFAULT_ID_PATTERN,
     DEFAULT_MAX_DIM,
     DEFAULT_PREFIX,
+    DEFAULT_ROTATIONS,
     STATUS_OK,
     OcrConfig,
     build_engine,
@@ -107,7 +108,7 @@ class DiscoverReq(BaseModel):
     device: str = "gpu"
     gpu_id: int = 0
     max_dim: int = DEFAULT_MAX_DIM
-    rotations: str = "0,90,270"
+    rotations: str = DEFAULT_ROTATIONS
     autocontrast: bool = True
     id_pattern: str = DEFAULT_ID_PATTERN
     prefix: str = DEFAULT_PREFIX
