@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 from PIL import Image, ImageOps
@@ -431,8 +431,13 @@ class OcrOutcome:
 
 
 def ocr_image(engine, path: Path, cfg: OcrConfig) -> OcrOutcome:
+    """Dekodar biletet og les det. Sjå `ocr_loaded` for sjølve lesinga."""
+    return ocr_loaded(engine, load_base_image(path, cfg.max_dim, cfg.autocontrast), cfg)
+
+
+def ocr_loaded(engine, base: Image.Image, cfg: OcrConfig) -> OcrOutcome:
     """
-    Les biletet og vel den beste ID-kandidaten.
+    Les eit ferdig dekoda bilete og vel den beste ID-kandidaten.
 
     Same ID-en står ofte to stader på eit skann, handskriven i motivet og maskinskriven på ein
     lapp langs kanten, og då skal lappen vinne. Difor samlar me alle kandidatane i staden for å
@@ -443,7 +448,6 @@ def ocr_image(engine, path: Path, cfg: OcrConfig) -> OcrOutcome:
     sikkerheitsnett for at *deteksjonen* kan gå glipp av ein lapp i éi retning, og dei blir
     aldri brukte når fyrste forsøket gir ein heil ID med god skår.
     """
-    base = load_base_image(path, cfg.max_dim, cfg.autocontrast)
     first_text = ""
     best: Optional[IdCandidate] = None
     best_text = ""
@@ -504,7 +508,8 @@ def find_matching_tiff(jpg: Path, tiff_dir: Optional[Path]) -> Optional[Path]:
     return None
 
 
-def process_one(engine, jpg: Path, cfg: OcrConfig, tiff: Optional[Path] = None) -> dict:
+def process_one(engine, jpg: Path, cfg: OcrConfig, tiff: Optional[Path] = None,
+                load: Optional[Callable[[], Image.Image]] = None) -> dict:
     """
     OCR-ar éi fil og returnerer ei ferdig rapport-rad (CSV_FIELDS).
 
@@ -512,9 +517,14 @@ def process_one(engine, jpg: Path, cfg: OcrConfig, tiff: Optional[Path] = None) 
     hit, av mappe-indekseringa i folders.py, som kjenner heile mappa frå eitt katalogoppslag.
     Å slå det opp per bilete i staden ville kosta fire filsystem-oppslag for kvar fil, og det
     er ikkje gratis når materialet ligg på ein nettverksdisk.
+
+    `load` gir det ferdig dekoda biletet når nokon andre har dekoda det, til dømes dekodekøen i
+    pipeline.py. Han blir kalla her inne, slik at ei fil som ikkje kan dekodast blir den same
+    feilrada uansett kven som dekoda henne.
     """
     try:
-        outcome = ocr_image(engine, jpg, cfg)
+        base = load() if load else load_base_image(jpg, cfg.max_dim, cfg.autocontrast)
+        outcome = ocr_loaded(engine, base, cfg)
         cls = classify(outcome, cfg.prefix)
         return {
             "original_jpg": str(jpg),

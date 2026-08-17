@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import os
 import shutil
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from collections import deque
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 from typing import Callable, Optional
 
 from . import core
-from .core import OcrConfig, build_engine, process_one, reason_for, STATUS_OK
+from .core import OcrConfig, build_engine, load_base_image, process_one, reason_for, STATUS_OK
 from .folders import FolderIndex, unused_tiffs, walk_folders
 from .report import open_done_writer, write_manual_list
 
@@ -37,6 +38,12 @@ def _worker_process(jpg_str: str, tiff_str: Optional[str]) -> dict:
 JpgPair = tuple[Path, Optional[Path]]
 
 
+# Kor mange bilete som blir dekoda i forkant. Éin er nok til å dekke over ventinga; to gir litt
+# slark når filene ligg på ein nettverksdisk og lesetida varierer. Meir enn det er berre minne,
+# for OCR-en er likevel den som avgjer farten. Kvart bilete i køen er rundt 12 MB.
+PREFETCH_DEPTH = 2
+
+
 def run_discover_sequential(
     todo: list[JpgPair],
     engine,
@@ -44,10 +51,39 @@ def run_discover_sequential(
     on_row: Callable[[dict], None],
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> None:
-    for jpg, tiff in todo:
-        if should_stop and should_stop():
-            break
-        on_row(process_one(engine, jpg, cfg, tiff))
+    """
+    Les bileta i tur og orden med éin motor, men dekodar dei neste i eigne trådar.
+
+    Dekodinga tek 0,31 s per bilete og lesinga rundt 0,25, og gjekk dei etter kvarandre i same
+    tråden, ville GPU-en stått stille over halve tida. Pillow slepp GIL-en mens han dekodar, så
+    ein liten kø med trådar er nok til å legge dei to oppå kvarandre. Det same skjuler ventetida
+    når filene blir henta over nettverk.
+    """
+    stopped = (lambda: False) if should_stop is None else should_stop
+    pool = ThreadPoolExecutor(max_workers=PREFETCH_DEPTH, thread_name_prefix="dekod")
+    queue: deque = deque()
+    remaining = iter(todo)
+
+    def fyll() -> None:
+        while len(queue) <= PREFETCH_DEPTH:
+            neste = next(remaining, None)
+            if neste is None:
+                return
+            jpg, tiff = neste
+            queue.append((jpg, tiff, pool.submit(load_base_image, jpg, cfg.max_dim, cfg.autocontrast)))
+
+    try:
+        fyll()
+        while queue:
+            if stopped():
+                break
+            jpg, tiff, dekoda = queue.popleft()
+            # `dekoda.result` blir kalla inne i process_one, så ei fil som ikkje kan dekodast
+            # blir ei feilrad på same måten som før køen fanst.
+            on_row(process_one(engine, jpg, cfg, tiff, load=dekoda.result))
+            fyll()
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def _submit_folder(ex: ProcessPoolExecutor, todo: list[JpgPair],
