@@ -32,7 +32,12 @@ DEFAULT_ID_PATTERN = r"SFF[Ff]?\s*[-\u2013]?\s*(\d{4,6})\s*[.,\-\u2013]\s*(\d{2,
 # «SFFf-94263.0» blir med vilje ikkje godteke som taldel, for der har OCR-en delt løpenummeret
 # midt i, og då ville me bunde det halve til noko anna.
 SERIES_TAIL_PATTERN = re.compile(r"SFF[Ff]?\s*[-\u2013]?\s*(\d{4,6})\s*[.,\-\u2013]?\s*$", re.IGNORECASE)
-SEQUENCE_FIELD_PATTERN = re.compile(r"^\s*(\d{4})\s*$")
+
+# Løpenummeret må stå fyrst i feltet, men får ha meir tekst etter seg. På mange lappar står det
+# «0042 Eigar: Johan B.Smørdal» som eitt felt, fordi OCR-en delte linja i mellomrommet etter
+# punktumet, og då er nummeret utilgjengeleg dersom feltet må vere reint. Fire siffer og ikkje
+# fleire, så eit årstal i ei lengre talrekke ikkje kan snike seg inn.
+SEQUENCE_FIELD_PATTERN = re.compile(r"^\s*(\d{4})(?!\d)")
 
 # Kor nær to tekstfelt må liggje for å høyre saman, målt i tekstens eiga tjukkleik. Målt på ekte
 # lappar ligg avstanden mellom taldel og løpenummer på 24 til 74 pikslar der teksten er 55 til 85
@@ -44,9 +49,11 @@ NEIGHBOUR_GAP = 1.5
 # Målt på ekte materiale ligg reine lappar på 0,96 og oppover.
 STRONG_SCORE = 0.95
 
-# Deteksjonen er det dyraste steget i OCR-en, 0,33 s mot 0,11 s på halv oppløysing, og ho finn
-# lappen like godt der. Utsnitta blir framleis klipte frå det store biletet, så attkjenninga får
-# dei skarpe pikslane. Målt på ekte materiale: same ID-ar, og eit tredjedels sekund spart.
+# Deteksjonen er det dyraste steget i OCR-en, 0,33 s mot 0,11 s på halv oppløysing. Utsnitta blir
+# uansett klipte frå det store biletet, så attkjenninga får dei skarpe pikslane. Halv oppløysing
+# finn dei store lappane langs kanten like godt, men ein liten lapp under motivet forsvinn heilt:
+# den blei til eitt felt med skåren 0,215, mens full oppløysing las han som ein ID med 0,99. Difor
+# er dette fyrste forsøket og ikkje det einaste, sjå `_passes`.
 DETECT_SCALE = 2
 
 # Retningane heilbiletet blir snudd i **dersom** fyrste forsøket ikkje finn ID-en. Sjølve
@@ -372,7 +379,7 @@ def _straighten(img: Image.Image, box) -> tuple[Image.Image, bool]:
     return crop, upright
 
 
-def read_fields(engine, img: Image.Image) -> list[TextField]:
+def read_fields(engine, img: Image.Image, detect_scale: int = DETECT_SCALE) -> list[TextField]:
     """
     Finn all tekst i biletet og les kvart felt i den leseretninga OCR-en er tryggast på.
 
@@ -381,16 +388,19 @@ def read_fields(engine, img: Image.Image) -> list[TextField]:
     lesinga med best skår vinn. Det er dette som gjer at eit løpenummer som står opp ned blir
     lese som «0004» og ikkje «7000», utan at heilbiletet må snuast, og det er grunnen til at me
     ikkje treng å gjette på kva veg motivet ligg.
+
+    `detect_scale` er kor mykje biletet blir krympa før deteksjonen. Attkjenninga får dei skarpe
+    pikslane uansett, sidan utsnitta blir klipte frå `img`.
     """
-    small = img if DETECT_SCALE == 1 else img.resize(
-        (max(img.width // DETECT_SCALE, 1), max(img.height // DETECT_SCALE, 1)), Image.BILINEAR
+    small = img if detect_scale == 1 else img.resize(
+        (max(img.width // detect_scale, 1), max(img.height // detect_scale, 1)), Image.BILINEAR
     )
     det = engine(_to_bgr(small), use_det=True, use_cls=False, use_rec=False)
     boxes = getattr(det, "boxes", None)
     if boxes is None or len(boxes) == 0:
         return []
 
-    boxes = [[(float(p[0]) * DETECT_SCALE, float(p[1]) * DETECT_SCALE) for p in box] for box in boxes]
+    boxes = [[(float(p[0]) * detect_scale, float(p[1]) * detect_scale) for p in box] for box in boxes]
     crops, uprights, variants = [], [], []
     for box in boxes:
         crop, upright = _straighten(img, box)
@@ -497,6 +507,25 @@ def ocr_image(engine, path: Path, cfg: OcrConfig) -> OcrOutcome:
     return ocr_loaded(engine, load_base_image(path, cfg.max_dim, cfg.autocontrast), cfg)
 
 
+def _passes(rotations: tuple[int, ...]) -> list[tuple[int, int]]:
+    """
+    Forsøka lesinga gjer, som (rotasjon, deteksjonsskala), billegaste fyrst.
+
+    Fyrst biletet slik det ligg, på halv oppløysing, som held for dei store lappane langs kanten.
+    Så det same biletet i full oppløysing, for ein liten lapp under motivet forsvinn når biletet
+    blir halvert. Til sist dei snudde retningane, som er sikkerheitsnettet for at deteksjonen kan
+    gå glipp av ein lapp i éi stilling og finne han i ei anna. Alt etter det fyrste forsøket kostar
+    berre tid på bilete som ikkje alt har gitt ein sikker ID, sidan `ocr_loaded` sluttar med ein
+    gong han har ein heil ID med god skår.
+    """
+    first = rotations[0] if rotations else 0
+    passes = [(first, DETECT_SCALE)]
+    if DETECT_SCALE != 1:
+        passes.append((first, 1))
+    passes.extend((rot, DETECT_SCALE) for rot in rotations[1:])
+    return passes
+
+
 def ocr_loaded(engine, base: Image.Image, cfg: OcrConfig) -> OcrOutcome:
     """
     Les eit ferdig dekoda bilete og vel den beste ID-kandidaten.
@@ -506,16 +535,16 @@ def ocr_loaded(engine, base: Image.Image, cfg: OcrConfig) -> OcrOutcome:
     ta det fyrste treffet, og vel mellom dei etter reglane i `IdCandidate.rank`.
 
     Kvart forsøk er éi deteksjon der kvart tekstfelt blir retta opp og lese for seg, så
-    leseretninga til teksten er handtert der. Retningane i `cfg.rotations` er difor berre eit
-    sikkerheitsnett for at *deteksjonen* kan gå glipp av ein lapp i éi retning, og dei blir
-    aldri brukte når fyrste forsøket gir ein heil ID med god skår.
+    leseretninga til teksten er handtert der. Forsøka etter det fyrste, sjå `_passes`, er difor
+    berre eit sikkerheitsnett for at *deteksjonen* kan gå glipp av ein lapp, og dei blir aldri
+    brukte når fyrste forsøket gir ein heil ID med god skår.
     """
     first_text = ""
     best: Optional[IdCandidate] = None
     best_text = ""
-    for rot in cfg.rotations:
+    for rot, scale in _passes(cfg.rotations):
         img = base.rotate(rot, expand=True) if rot else base
-        fields = read_fields(engine, img)
+        fields = read_fields(engine, img, scale)
         text = "  ".join(f.text for f in fields)
         if not first_text:
             first_text = text
