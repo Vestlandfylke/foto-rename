@@ -1,3 +1,9 @@
+#notat fra Christian, etter møte med Hedvig
+* Kan vi auto - croppe noen filer - sparer masse plass og ser bedre ut på thumbnailen.
+* De med usikkerhet om riktig filnavn må tas manuelt - er dette godt håndtert?
+* 
+
+
 # NB Foto-namngivar
 
 Verktøy som gir re-digitaliserte fotofiler frå Nasjonalbiblioteket nye, ID-baserte filnamn, slik at dei kan importerast i arkivets bildebase. Identifikatoren står som maskin-trykt tekst i sjølve motivet (t.d. `SFFf-94263.0001`), og blir lesen med lokal OCR (RapidOCR / PP-OCR via ONNX). Ingen data blir sendt ut av maskina.
